@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { FibonacciCanvas } from './components/FibonacciCanvas';
 import { searchFibonacciTerm, FibonacciMatchResult, DIGIT_RULES } from './math/fibonacci';
 import { soundEngine } from './audio/sound';
-import { Volume2, VolumeX, Sparkles, Send, RotateCcw, Music } from 'lucide-react';
+import { Volume2, VolumeX, Sparkles, Send, RotateCcw, Music, Share2, Check } from 'lucide-react';
 
 export default function App() {
   const [inputValue, setInputValue] = useState('');
@@ -13,11 +13,29 @@ export default function App() {
   const [isMuted, setIsMuted] = useState(soundEngine.getMuted());
   const [isPlaying, setIsPlaying] = useState(soundEngine.getIsPlaying());
   const [copied, setCopied] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
   const resultRef = useRef<HTMLElement>(null);
 
-  // Auto-start Interstellar background music by default when user enters the website
+  // Auto-start Interstellar background music by default on entrance & first interaction
   useEffect(() => {
     soundEngine.playInterstellar().catch(() => {});
+
+    const onFirstUserAction = () => {
+      soundEngine.playInterstellar().catch(() => {});
+      ['pointerdown', 'touchstart', 'keydown', 'click'].forEach((ev) => {
+        window.removeEventListener(ev, onFirstUserAction, true);
+      });
+    };
+
+    ['pointerdown', 'touchstart', 'keydown', 'click'].forEach((ev) => {
+      window.addEventListener(ev, onFirstUserAction, { capture: true, passive: true });
+    });
+
+    return () => {
+      ['pointerdown', 'touchstart', 'keydown', 'click'].forEach((ev) => {
+        window.removeEventListener(ev, onFirstUserAction, true);
+      });
+    };
   }, []);
 
   // Subscribe to background music state
@@ -30,12 +48,18 @@ export default function App() {
   }, []);
 
   // Search logic
-  const handleSearch = async (val: string) => {
+  const handleSearch = async (val: string, syncUrl: boolean = true) => {
     const clean = val.trim();
     if (!clean) return;
 
     setIsSearching(true);
     setPreviewQuery(clean);
+
+    if (syncUrl && typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('q', clean);
+      window.history.replaceState({}, '', url.toString());
+    }
 
     try {
       soundEngine.playClick();
@@ -58,9 +82,40 @@ export default function App() {
     }
   };
 
+  // Load shared query from URL parameter if present on initial load
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get('q');
+    if (q) {
+      const clean = q.replace(/[^0-9]/g, '').slice(0, 6);
+      if (clean) {
+        setInputValue(clean);
+        handleSearch(clean, false);
+      }
+    }
+  }, []);
+
+  // Browser navigation history support (Back/Forward)
+  useEffect(() => {
+    const handlePopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      const q = params.get('q');
+      if (q) {
+        const clean = q.replace(/[^0-9]/g, '').slice(0, 6);
+        if (clean && clean !== inputValue) {
+          setInputValue(clean);
+          handleSearch(clean, false);
+        }
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [inputValue]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    handleSearch(inputValue);
+    handleSearch(inputValue, true);
   };
 
   const handleCopy = async () => {
@@ -75,10 +130,52 @@ export default function App() {
     }
   };
 
+  // Generate shareable URL for the current visualization
+  const getShareUrl = (query: string) => {
+    if (typeof window === 'undefined') return '';
+    const url = new URL(window.location.origin + window.location.pathname);
+    url.searchParams.set('q', query);
+    return url.toString();
+  };
+
+  const handleShare = async () => {
+    if (!matchResult) return;
+    soundEngine.playClick();
+    const shareUrl = getShareUrl(matchResult.query);
+    const shareData = {
+      title: `Slice of Fibonacci — "${matchResult.query}" in 3D`,
+      text: `Explore "${matchResult.query}" in 3D glass orbs inside Fibonacci term F(${matchResult.n.toLocaleString('en-US')})!`,
+      url: shareUrl,
+    };
+
+    if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare && navigator.canShare(shareData)) {
+      try {
+        await navigator.share(shareData);
+        setShareCopied(true);
+        setTimeout(() => setShareCopied(false), 2500);
+        return;
+      } catch (err: unknown) {
+        if ((err as Error)?.name === 'AbortError') return;
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2500);
+    } catch {
+      // Fallback
+    }
+  };
+
   const handleToggleSound = () => {
     soundEngine.playClick();
-    const muted = soundEngine.toggleMute();
-    setIsMuted(muted);
+    if (!isPlaying && !isMuted) {
+      soundEngine.playInterstellar().catch(() => {});
+    } else {
+      const muted = soundEngine.toggleMute();
+      setIsMuted(muted);
+    }
   };
 
   // Re-fly camera to sequence orbs
@@ -158,16 +255,19 @@ export default function App() {
                     <span className="w-[2.5px] bg-[#9ecbff] rounded-full animate-eq-3 shadow-[0_0_6px_rgba(158,203,255,0.8)]" />
                   </>
                 ) : (
-                  <Music className="w-3.5 h-3.5 text-[#6b7588] group-hover:text-[#a2aab8] transition" />
+                  <Music className={`w-3.5 h-3.5 ${!isMuted ? 'text-[#f0c978] animate-pulse' : 'text-[#6b7588]'} transition`} />
                 )}
               </div>
 
               <div className="flex flex-col leading-none pr-1 select-none">
                 <span className="text-[9px] font-mono tracking-wider text-[#71b9ff] uppercase">
-                  {isPlaying && !isMuted ? 'Now Playing' : 'Theme'}
+                  {isPlaying && !isMuted ? 'Now Playing' : isMuted ? 'Muted' : 'Click to Play'}
                 </span>
-                <span className="text-[11px] font-medium text-white/90 group-hover:text-white transition">
-                  Interstellar
+                <span className="text-[11px] font-medium text-white/90 group-hover:text-white transition flex items-center gap-1.5">
+                  <span>Interstellar</span>
+                  {!isPlaying && !isMuted && (
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#f0c978] animate-ping" />
+                  )}
                 </span>
               </div>
             </button>
@@ -177,7 +277,11 @@ export default function App() {
               title={isMuted ? 'Play Interstellar Music' : 'Mute Interstellar Music'}
               className="p-1 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-[#8e96a5] hover:text-[#71b9ff] transition cursor-pointer"
             >
-              {isMuted ? <VolumeX className="w-3.5 h-3.5 text-[#606977]" /> : <Volume2 className="w-3.5 h-3.5 text-[#71b9ff]" />}
+              {isMuted ? (
+                <VolumeX className="w-3.5 h-3.5 text-[#606977]" />
+              ) : (
+                <Volume2 className="w-3.5 h-3.5 text-[#71b9ff]" />
+              )}
             </button>
           </div>
         </div>
@@ -334,6 +438,25 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  onClick={handleShare}
+                  className="px-3 py-1 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 hover:border-[#71b9ff]/40 text-[#c5d3e8] hover:text-white text-xs font-mono flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+                  title="Share 3D Fibonacci visualization URL"
+                >
+                  {shareCopied ? (
+                    <>
+                      <Check className="w-3 h-3 text-[#71b9ff]" />
+                      <span className="text-[#71b9ff]">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Share2 className="w-3 h-3 text-[#71b9ff]" />
+                      <span>Share ↗</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
                   onClick={handleReFly}
                   className="px-3 py-1 rounded-lg bg-[#71b9ff]/15 hover:bg-[#71b9ff]/25 border border-[#71b9ff]/40 text-[#71b9ff] text-xs font-mono flex items-center gap-1.5 transition cursor-pointer shadow-[0_0_12px_rgba(113,185,255,0.2)]"
                 >
@@ -432,14 +555,34 @@ export default function App() {
             </div>
 
             {/* Actions Row */}
-            <div className="flex justify-between items-center gap-3 pt-1">
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="px-4 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 hover:border-[#71b9ff]/40 text-[#c5d3e8] text-xs font-mono transition cursor-pointer flex items-center gap-1.5"
-              >
-                <span>{copied ? 'Copied to Clipboard ✓' : 'Copy Telemetry ↗'}</span>
-              </button>
+            <div className="flex flex-wrap justify-between items-center gap-3 pt-1">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleShare}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#71b9ff]/20 to-[#2c83d6]/20 hover:from-[#71b9ff]/30 hover:to-[#2c83d6]/30 border border-[#71b9ff]/40 hover:border-[#71b9ff]/70 text-[#9bd3ff] hover:text-white text-xs font-mono transition cursor-pointer flex items-center gap-1.5 shadow-[0_0_15px_rgba(113,185,255,0.15)] active:scale-95"
+                >
+                  {shareCopied ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-[#71b9ff]" />
+                      <span className="text-[#71b9ff]">Share Link Copied ✓</span>
+                    </>
+                  ) : (
+                    <>
+                      <Share2 className="w-3.5 h-3.5 text-[#71b9ff]" />
+                      <span>Share Visualization ↗</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="px-4 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 hover:border-[#71b9ff]/40 text-[#c5d3e8] text-xs font-mono transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <span>{copied ? 'Copied to Clipboard ✓' : 'Copy Telemetry ↗'}</span>
+                </button>
+              </div>
 
               <span className="text-[11px] text-[#657386] font-mono">
                 Digits counted starting from index 1.
