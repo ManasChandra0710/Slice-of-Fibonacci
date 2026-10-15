@@ -1,0 +1,487 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { FibonacciCanvas } from './components/FibonacciCanvas';
+import { searchFibonacciTerm, FibonacciMatchResult, DIGIT_RULES } from './math/fibonacci';
+import { soundEngine } from './audio/sound';
+import { Volume2, VolumeX, Sparkles, Compass, Send, RotateCcw, Music } from 'lucide-react';
+
+export default function App() {
+  const [inputValue, setInputValue] = useState('');
+  const [previewQuery, setPreviewQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [matchResult, setMatchResult] = useState<FibonacciMatchResult | null>(null);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [isMuted, setIsMuted] = useState(soundEngine.getMuted());
+  const [isPlaying, setIsPlaying] = useState(soundEngine.getIsPlaying());
+  const [copied, setCopied] = useState(false);
+  const resultRef = useRef<HTMLElement>(null);
+
+  // Auto-start Interstellar background music by default when user enters the website
+  useEffect(() => {
+    soundEngine.playInterstellar().catch(() => {});
+  }, []);
+
+  // Subscribe to background music state
+  useEffect(() => {
+    const unsub = soundEngine.subscribe((state) => {
+      setIsMuted(state.isMuted);
+      setIsPlaying(state.isPlaying);
+    });
+    return unsub;
+  }, []);
+
+  // Search logic
+  const handleSearch = async (val: string) => {
+    const clean = val.trim();
+    if (!clean) return;
+
+    setIsSearching(true);
+    setPreviewQuery(clean);
+
+    try {
+      soundEngine.playClick();
+      // Ensure Interstellar background music is playing when user begins exploring
+      if (!soundEngine.getMuted()) {
+        soundEngine.playInterstellar().catch(() => {});
+      }
+      const res = await searchFibonacciTerm(clean);
+      setMatchResult(res);
+
+      setTimeout(() => {
+        if (resultRef.current && window.innerWidth < 768) {
+          resultRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }, 300);
+    } catch {
+      // Handled cleanly without cluttering UI
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleSearch(inputValue);
+  };
+
+  const handleCopy = async () => {
+    if (!matchResult) return;
+    const txt = `${matchResult.query} first appears in Fibonacci term F(${matchResult.n.toLocaleString('en-US')}) at digit position ${matchResult.pos.toLocaleString('en-US')} (1-based).`;
+    try {
+      await navigator.clipboard.writeText(txt);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback
+    }
+  };
+
+  const handleToggleSound = () => {
+    soundEngine.playClick();
+    const muted = soundEngine.toggleMute();
+    setIsMuted(muted);
+  };
+
+  // Re-fly camera to sequence orbs
+  const handleReFly = () => {
+    if (matchResult) {
+      setMatchResult({ ...matchResult });
+    }
+  };
+
+  // Live preview digits for input
+  const liveDigits = inputValue.split('').filter((c) => /^[0-9]$/.test(c)).map(Number);
+
+  return (
+    <div className="max-w-[1100px] mx-auto px-4 sm:px-8 pt-6 sm:pt-8 pb-24 text-[#f2f4f8] min-h-screen flex flex-col justify-between">
+      {/* Floating Glass Navigation Header */}
+      <header className="glass-panel rounded-2xl px-5 py-3.5 flex justify-between items-center text-xs tracking-wide">
+        <div className="flex items-center gap-3 font-semibold text-sm sm:text-base tracking-tight">
+          <span className="relative flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-[#121c2e] via-[#0b1320] to-[#1c1810] border border-[#71b9ff]/40 shadow-[0_0_18px_rgba(113,185,255,0.28)] hover:border-[#f0c978]/60 hover:shadow-[0_0_24px_rgba(240,201,120,0.4)] transition-all duration-300 group overflow-hidden shrink-0">
+            <span className="absolute inset-0 bg-gradient-to-tr from-[#71b9ff]/20 via-transparent to-[#f0c978]/25 opacity-70 group-hover:opacity-100 transition duration-300 pointer-events-none" />
+            <svg
+              viewBox="0 0 32 32"
+              className="w-5 h-5 relative z-10 filter drop-shadow-[0_0_6px_rgba(113,185,255,0.7)]"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <defs>
+                <linearGradient id="fib-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#71b9ff" />
+                  <stop offset="55%" stopColor="#9ecbff" />
+                  <stop offset="100%" stopColor="#f0c978" />
+                </linearGradient>
+                <filter id="fib-glow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="0.8" result="blur" />
+                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                </filter>
+              </defs>
+              {/* Subtle Golden Ratio Subdivision Geometry */}
+              <line x1="18" y1="9" x2="18" y2="23.5" stroke="rgba(113,185,255,0.22)" strokeWidth="0.75" strokeDasharray="1.5 1.5" />
+              <line x1="18" y1="18" x2="27" y2="18" stroke="rgba(240,201,120,0.22)" strokeWidth="0.75" strokeDasharray="1.5 1.5" />
+
+              {/* Fibonacci Logarithmic Golden Spiral */}
+              <path
+                d="M 4 23 A 14 14 0 0 1 18 9 A 9 9 0 0 1 27 18 A 5.5 5.5 0 0 1 21.5 23.5 A 3.5 3.5 0 0 1 18 20 A 2 2 0 0 1 20 18 A 1.2 1.2 0 0 1 21.2 19.2"
+                stroke="url(#fib-grad)"
+                strokeWidth="2.1"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+
+              {/* Radiant Golden Singularity Node & Fibonacci Points */}
+              <circle cx="21" cy="18.8" r="1.7" fill="#f0c978" filter="url(#fib-glow)" />
+              <circle cx="4" cy="23" r="1.3" fill="#71b9ff" />
+              <circle cx="18" cy="9" r="1.3" fill="#9ecbff" />
+              <circle cx="27" cy="18" r="1.3" fill="#f0c978" />
+            </svg>
+          </span>
+          <span className="text-white font-medium tracking-tight text-[15px] sm:text-[16px]">
+            Slice of Fibonacci
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 sm:gap-3">
+
+          {/* Interstellar Music Control */}
+          <div className="flex items-center gap-2 p-1.5 pl-2.5 pr-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 hover:border-[#71b9ff]/40 transition duration-300 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.35)]">
+            <button
+              onClick={handleToggleSound}
+              className="flex items-center gap-2 text-left cursor-pointer group"
+              title={isMuted ? 'Play Interstellar Soundtrack' : 'Mute Interstellar Soundtrack'}
+            >
+              {/* Dynamic Equalizer / Music Icon */}
+              <div className="w-4 h-4 flex items-end justify-center gap-[2.5px] shrink-0">
+                {isPlaying && !isMuted ? (
+                  <>
+                    <span className="w-[2.5px] bg-[#f0c978] rounded-full animate-eq-1 shadow-[0_0_6px_rgba(240,201,120,0.8)]" />
+                    <span className="w-[2.5px] bg-[#71b9ff] rounded-full animate-eq-2 shadow-[0_0_6px_rgba(113,185,255,0.8)]" />
+                    <span className="w-[2.5px] bg-[#9ecbff] rounded-full animate-eq-3 shadow-[0_0_6px_rgba(158,203,255,0.8)]" />
+                  </>
+                ) : (
+                  <Music className="w-3.5 h-3.5 text-[#6b7588] group-hover:text-[#a2aab8] transition" />
+                )}
+              </div>
+
+              <div className="flex flex-col leading-none pr-1 select-none">
+                <span className="text-[9px] font-mono tracking-wider text-[#71b9ff] uppercase">
+                  {isPlaying && !isMuted ? 'Now Playing' : 'Theme'}
+                </span>
+                <span className="text-[11px] font-medium text-white/90 group-hover:text-white transition">
+                  Interstellar
+                </span>
+              </div>
+            </button>
+
+            <button
+              onClick={handleToggleSound}
+              title={isMuted ? 'Play Interstellar Music' : 'Mute Interstellar Music'}
+              className="p-1 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-[#8e96a5] hover:text-[#71b9ff] transition cursor-pointer"
+            >
+              {isMuted ? <VolumeX className="w-3.5 h-3.5 text-[#606977]" /> : <Volume2 className="w-3.5 h-3.5 text-[#71b9ff]" />}
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content Area */}
+      <main className="flex-1">
+        {/* Futuristic Glass Hero Console */}
+        <section className="max-w-[760px] mx-auto mt-10 sm:mt-14 text-center">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#71b9ff]/10 border border-[#71b9ff]/30 text-[#71b9ff] text-[11px] font-mono tracking-[0.16em] uppercase mb-4 shadow-[0_0_20px_rgba(113,185,255,0.15)]">
+            <Sparkles className="w-3.5 h-3.5" />
+            Infinite Sequence Orb Space
+          </div>
+
+          <h1 className="font-semibold text-[34px] sm:text-[52px] md:text-[62px] tracking-[-0.05em] leading-[1.08] mx-auto mb-4 text-[#f2f4f8]">
+            Your number is hiding inside{' '}
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#71b9ff] via-[#9ecbff] to-[#f0c978]">
+              Fibonacci.
+            </span>
+          </h1>
+
+          <p className="max-w-[560px] mx-auto text-[#a2aab8] text-sm sm:text-[15px] leading-relaxed">
+            Every digit in the sequence is a radiant glass orb in 3D space. Type your number and watch its exact sequence of orbs illuminate in the swirl.
+          </p>
+
+          {/* Glass Search Console */}
+          <div className="max-w-[460px] mx-auto mt-7">
+            <form
+              onSubmit={handleSubmit}
+              className="glass-panel-glow rounded-2xl p-2 flex items-center gap-2 transition duration-300"
+            >
+              <div className="relative flex-1 flex items-center">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  maxLength={6}
+                  value={inputValue}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/[^0-9]/g, '');
+                    setInputValue(val);
+                    if (val) setPreviewQuery(val);
+                  }}
+                  aria-label="Number sequence to search"
+                  placeholder="Type any number (e.g. 0412)..."
+                  className="w-full bg-transparent text-[#f2f4f8] border-0 outline-none px-4 py-2.5 text-base sm:text-[18px] tracking-[0.16em] font-mono placeholder:text-[#556173] placeholder:tracking-normal font-semibold"
+                  required
+                />
+
+                {/* Live typing glass orb preview inside input */}
+                {liveDigits.length > 0 && (
+                  <div className="hidden sm:flex items-center gap-1.5 pr-3 pointer-events-none">
+                    {liveDigits.map((d, i) => (
+                      <span
+                        key={i}
+                        className="w-4 h-4 rounded-full glass-orb"
+                        style={{
+                          backgroundColor: DIGIT_RULES[d].color,
+                          color: DIGIT_RULES[d].color,
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSearching}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#71b9ff] to-[#2c83d6] hover:from-[#8ec8ff] hover:to-[#3891e8] text-[#060b14] font-semibold text-xs sm:text-[13px] tracking-wide font-mono cursor-pointer whitespace-nowrap shadow-[0_0_20px_rgba(113,185,255,0.4)] hover:-translate-y-0.5 active:translate-y-0 transition duration-200 disabled:opacity-55 disabled:cursor-wait flex items-center gap-1.5"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{isSearching ? 'Scanning…' : 'Find it'}</span>
+              </button>
+            </form>
+          </div>
+
+          {/* Futuristic Glass Color Legend Bar (Uniform Size, 10 Colors) */}
+          <div className="max-w-[700px] mx-auto mt-6 glass-panel rounded-2xl p-4 sm:p-5 text-center">
+            <div className="flex items-center justify-between pb-3 mb-3 border-b border-white/[0.06] text-xs">
+              <span className="font-medium text-[#c5d3e8] flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#71b9ff] shadow-[0_0_8px_#71b9ff]"></span>
+                Orb Colour System
+              </span>
+              <span className="text-[#7d8fa6] font-mono text-[11px]">
+                Uniform Size · Digit Codes 0–9
+              </span>
+            </div>
+
+            {/* 10 Glowing Glass Orbs */}
+            <div className="grid grid-cols-5 sm:grid-cols-10 gap-2 sm:gap-3 py-1">
+              {DIGIT_RULES.map((rule) => (
+                <button
+                  key={rule.digit}
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playClick();
+                    setInputValue((prev) => (prev.length < 6 ? prev + rule.digit : prev));
+                  }}
+                  className="flex flex-col items-center gap-2 p-2 rounded-xl bg-white/[0.02] hover:bg-white/[0.08] border border-white/[0.04] hover:border-white/20 transition group cursor-pointer"
+                  title={`Click to add digit ${rule.digit} (${rule.name})`}
+                >
+                  <span
+                    className="w-6 h-6 sm:w-7 sm:h-7 rounded-full glass-orb transition duration-200 group-hover:scale-110"
+                    style={{
+                      backgroundColor: rule.color,
+                      color: rule.color,
+                    }}
+                  />
+                  <div className="flex flex-col items-center">
+                    <span className="font-mono text-xs font-bold text-white group-hover:text-[#71b9ff]">
+                      {rule.digit}
+                    </span>
+                    <span className="text-[9px] text-[#718299] truncate max-w-[50px] hidden sm:inline">
+                      {rule.name.split(' ')[0]}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <p className="text-[12px] text-[#7d8fa6] mt-3 italic font-sans">
+              Every sequence is a continuous trail of these glassy orbs glowing in the 3D swirl.
+            </p>
+          </div>
+        </section>
+
+        {/* 3D Glass Spiral Viewport Section */}
+        <section
+          className="scale-visual-container"
+          aria-label="3D Fibonacci spiral showing illuminated glass orbs"
+        >
+          <FibonacciCanvas
+            matchResult={matchResult}
+            activeQuery={previewQuery}
+          />
+        </section>
+
+        {/* Results Glass Console */}
+        {matchResult && (
+          <section
+            ref={resultRef}
+            className="max-w-[780px] mx-auto mb-8 glass-panel rounded-2xl p-5 sm:p-7 animate-rise"
+            aria-live="polite"
+          >
+            <div className="flex justify-between items-center gap-3 pb-4 mb-5 border-b border-white/[0.08]">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#71b9ff] shadow-[0_0_12px_#71b9ff]" />
+                <span className="text-xs font-mono font-semibold uppercase tracking-[0.14em] text-[#c0d4ec]">
+                  Sequence Illuminated in 3D
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleReFly}
+                  className="px-3 py-1 rounded-lg bg-[#71b9ff]/15 hover:bg-[#71b9ff]/25 border border-[#71b9ff]/40 text-[#71b9ff] text-xs font-mono flex items-center gap-1.5 transition cursor-pointer shadow-[0_0_12px_rgba(113,185,255,0.2)]"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Re-Fly ↗</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Sequence Orbs Visual Trail */}
+            <div className="mb-6 p-4 rounded-xl bg-[#090f1a]/80 border border-white/[0.06] flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div>
+                <div className="text-[10px] font-mono uppercase tracking-[0.12em] text-[#7d8fa6] mb-1">
+                  Active Sequence Trail
+                </div>
+                <div className="text-xl font-bold font-mono tracking-wider text-white">
+                  "{matchResult.query}"
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 p-2.5 rounded-xl bg-black/40 border border-white/[0.08]">
+                {matchResult.trailDigits.map((d, idx) => {
+                  const rule = DIGIT_RULES[d];
+                  return (
+                    <div key={idx} className="flex flex-col items-center gap-1">
+                      <span
+                        className="w-7 h-7 rounded-full glass-orb transition duration-200"
+                        style={{
+                          backgroundColor: rule.color,
+                          color: rule.color,
+                        }}
+                      />
+                      <span className="font-mono text-xs font-bold text-white">{d}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 3-Column Glass Stat Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 mb-5">
+              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                <div className="text-[10px] font-mono uppercase tracking-wider text-[#7d8fa6]">
+                  Fibonacci Term
+                </div>
+                <div className="text-xl sm:text-2xl font-bold font-mono text-[#71b9ff] mt-1">
+                  F({matchResult.n.toLocaleString('en-US')})
+                </div>
+                <div className="text-[11px] text-[#6e7e94] mt-1">
+                  The {matchResult.n === 0 ? '1st' : `${(matchResult.n + 1).toLocaleString('en-US')}th`} term
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                <div className="text-[10px] font-mono uppercase tracking-wider text-[#7d8fa6]">
+                  Position in Term
+                </div>
+                <div className="text-xl sm:text-2xl font-bold font-mono text-white mt-1">
+                  #{matchResult.pos.toLocaleString('en-US')}
+                </div>
+                <div className="text-[11px] text-[#6e7e94] mt-1">
+                  1-based digit index
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                <div className="text-[10px] font-mono uppercase tracking-wider text-[#7d8fa6]">
+                  Term Length
+                </div>
+                <div className="text-xl sm:text-2xl font-bold font-mono text-[#f0c978] mt-1">
+                  {matchResult.termLength.toLocaleString('en-US')}
+                </div>
+                <div className="text-[11px] text-[#6e7e94] mt-1">
+                  Total decimal digits
+                </div>
+              </div>
+            </div>
+
+            {/* Term Context Ribbon */}
+            <div className="p-4 bg-[#080d17] border border-white/[0.07] rounded-xl mb-4">
+              <div className="flex justify-between items-center text-[10px] uppercase font-mono tracking-wider text-[#7d8fa6] mb-2.5">
+                <span>Matching Term Stream</span>
+                <span>
+                  Digits {matchResult.pos.toLocaleString('en-US')}–
+                  {(matchResult.pos + matchResult.query.length - 1).toLocaleString('en-US')}
+                </span>
+              </div>
+
+              <div className="font-mono text-xs sm:text-[13px] leading-relaxed break-all text-[#99a9bf] select-text">
+                <span>{matchResult.before}</span>
+                <mark className="bg-[#1b3a5c] text-[#9bd3ff] border border-[#71b9ff]/60 rounded-md px-1.5 py-0.5 mx-0.5 font-bold shadow-[0_0_12px_rgba(113,185,255,0.4)]">
+                  {matchResult.match}
+                </mark>
+                <span>{matchResult.after}</span>
+              </div>
+            </div>
+
+            {/* Actions Row */}
+            <div className="flex justify-between items-center gap-3 pt-1">
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="px-4 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 hover:border-[#71b9ff]/40 text-[#c5d3e8] text-xs font-mono transition cursor-pointer flex items-center gap-1.5"
+              >
+                <span>{copied ? 'Copied to Clipboard ✓' : 'Copy Telemetry ↗'}</span>
+              </button>
+
+              <span className="text-[11px] text-[#657386] font-mono">
+                Digits counted starting from index 1.
+              </span>
+            </div>
+          </section>
+        )}
+
+        {/* Collapsible Architecture Guide */}
+        {aboutOpen && (
+          <section className="max-w-[780px] mx-auto mt-6 glass-panel rounded-2xl p-6 text-[#9eb0c6] text-[13px] leading-relaxed animate-rise">
+            <h2 className="text-sm text-white font-semibold mb-3 flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-[#71b9ff]" />
+              The Architecture of the 3D Glass Orbs Swirl
+            </h2>
+            <p className="my-2">
+              The Fibonacci sequence is defined by <code className="text-[#71b9ff] font-mono">F(0) = 0, F(1) = 1, F(n) = F(n−1) + F(n−2)</code>. As numbers grow, their consecutive ratio converges to the Golden Ratio <code className="text-[#f0c978] font-mono">Φ ≈ 1.6180339887...</code>.
+            </p>
+            <p className="my-2">
+              In this 3D visualization, each node represents an individual digit mapped onto a logarithmic Golden Spiral. Every digit (0 through 9) is represented by a uniform glass orb with a distinctive refractive color.
+            </p>
+            <p className="my-2">
+              When you enter a sequence, the engine scans the sequence in real time and highlights the exact trail of glass orbs in 3D with glowing illumination and dynamic camera fly-through.
+            </p>
+          </section>
+        )}
+      </main>
+
+      {/* Footer */}
+      <footer className="flex justify-between items-center gap-3 mt-12 pt-4 border-t border-white/[0.06] text-[#5d6c80] text-[11px] tracking-wider font-mono uppercase">
+        <span>F(n) = F(n−1) + F(n−2)</span>
+        <button
+          type="button"
+          onClick={() => {
+            soundEngine.playClick();
+            setAboutOpen(!aboutOpen);
+          }}
+          className="border-0 bg-transparent text-[#8298b4] hover:text-[#71b9ff] cursor-pointer font-inherit tracking-inherit uppercase transition"
+        >
+          {aboutOpen ? 'Close Guide ↑' : 'What is this?'}
+        </button>
+      </footer>
+    </div>
+  );
+}
