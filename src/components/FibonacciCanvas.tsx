@@ -482,7 +482,9 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
       }
     };
 
+    const onContextMenu = (e: MouseEvent) => e.preventDefault();
     const dom = renderer.domElement;
+    dom.addEventListener('contextmenu', onContextMenu);
     dom.addEventListener('mousedown', onMouseDown);
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
@@ -565,8 +567,10 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
 
             // 1. Number Badge floating directly above the orb showing the searched digit
             const bSprite = badgeSprites[b];
-            bSprite.material.map = badgeTextures[digit];
-            bSprite.material.needsUpdate = true;
+            if (bSprite.material.map !== badgeTextures[digit]) {
+              bSprite.material.map = badgeTextures[digit];
+              bSprite.material.needsUpdate = true;
+            }
             bSprite.position.set(ox, oy + 1.25 + Math.sin(time * 4 + b) * 0.1, oz);
             bSprite.scale.set(1.4 * pulse, 1.4 * pulse, 1.4);
             bSprite.visible = true;
@@ -703,6 +707,7 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
 
     return () => {
       cancelAnimationFrame(animId);
+      dom.removeEventListener('contextmenu', onContextMenu);
       dom.removeEventListener('mousedown', onMouseDown);
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
@@ -713,6 +718,14 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
 
       orbHaloTexture.dispose();
       badgeTextures.forEach((tex) => tex.dispose());
+      badgeSprites.forEach((s) => s.material.dispose());
+      haloSprites.forEach((s) => s.material.dispose());
+      microRings.forEach((r) => (r.material as THREE.Material).dispose());
+      if (scene.environment) {
+        scene.environment.dispose();
+      }
+      envRoom.dispose();
+
       dustGeo.dispose();
       dustMat.dispose();
       orbGeometry.dispose();

@@ -16,10 +16,8 @@ class SoundEngine {
   private isPlaying: boolean = false;
   private volume: number = 0.45;
   private listeners: Set<SoundStateListener> = new Set();
-  private hasInitializedMedia: boolean = false;
   private isProceduralActive: boolean = false;
   private proceduralInterval: number | null = null;
-  private organGain: GainNode | null = null;
   private pausedByVisibilityChange: boolean = false;
 
   constructor() {
@@ -133,7 +131,6 @@ class SoundEngine {
         this.audioEl.volume = this.volume;
         await this.audioEl.play();
         this.isPlaying = true;
-        this.hasInitializedMedia = true;
         this.notify();
         return;
       } catch {
@@ -166,7 +163,7 @@ class SoundEngine {
           return;
         }
         if (this.audioEl.volume > fadeStep) {
-          this.audioEl.volume -= fadeStep;
+          this.audioEl.volume = Math.max(0, Math.min(1, this.audioEl.volume - fadeStep));
         } else {
           clearInterval(fade);
           this.audioEl.pause();

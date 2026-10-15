@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { FibonacciCanvas } from './components/FibonacciCanvas';
 import { searchFibonacciTerm, FibonacciMatchResult, DIGIT_RULES } from './math/fibonacci';
 import { soundEngine } from './audio/sound';
-import { Volume2, VolumeX, Sparkles, Compass, Send, RotateCcw, Music } from 'lucide-react';
+import { Volume2, VolumeX, Sparkles, Send, RotateCcw, Music } from 'lucide-react';
 
 export default function App() {
   const [inputValue, setInputValue] = useState('');
