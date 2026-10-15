@@ -16,26 +16,9 @@ export default function App() {
   const [shareCopied, setShareCopied] = useState(false);
   const resultRef = useRef<HTMLElement>(null);
 
-  // Auto-start Interstellar background music by default on entrance & first interaction
+  // Auto-start Interstellar background music by default when user enters the website
   useEffect(() => {
     soundEngine.playInterstellar().catch(() => {});
-
-    const onFirstUserAction = () => {
-      soundEngine.playInterstellar().catch(() => {});
-      ['pointerdown', 'touchstart', 'keydown', 'click'].forEach((ev) => {
-        window.removeEventListener(ev, onFirstUserAction, true);
-      });
-    };
-
-    ['pointerdown', 'touchstart', 'keydown', 'click'].forEach((ev) => {
-      window.addEventListener(ev, onFirstUserAction, { capture: true, passive: true });
-    });
-
-    return () => {
-      ['pointerdown', 'touchstart', 'keydown', 'click'].forEach((ev) => {
-        window.removeEventListener(ev, onFirstUserAction, true);
-      });
-    };
   }, []);
 
   // Subscribe to background music state
@@ -170,12 +153,8 @@ export default function App() {
 
   const handleToggleSound = () => {
     soundEngine.playClick();
-    if (!isPlaying && !isMuted) {
-      soundEngine.playInterstellar().catch(() => {});
-    } else {
-      const muted = soundEngine.toggleMute();
-      setIsMuted(muted);
-    }
+    const muted = soundEngine.toggleMute();
+    setIsMuted(muted);
   };
 
   // Re-fly camera to sequence orbs
@@ -255,19 +234,16 @@ export default function App() {
                     <span className="w-[2.5px] bg-[#9ecbff] rounded-full animate-eq-3 shadow-[0_0_6px_rgba(158,203,255,0.8)]" />
                   </>
                 ) : (
-                  <Music className={`w-3.5 h-3.5 ${!isMuted ? 'text-[#f0c978] animate-pulse' : 'text-[#6b7588]'} transition`} />
+                  <Music className="w-3.5 h-3.5 text-[#6b7588] group-hover:text-[#a2aab8] transition" />
                 )}
               </div>
 
               <div className="flex flex-col leading-none pr-1 select-none">
                 <span className="text-[9px] font-mono tracking-wider text-[#71b9ff] uppercase">
-                  {isPlaying && !isMuted ? 'Now Playing' : isMuted ? 'Muted' : 'Click to Play'}
+                  {isPlaying && !isMuted ? 'Now Playing' : 'Theme'}
                 </span>
-                <span className="text-[11px] font-medium text-white/90 group-hover:text-white transition flex items-center gap-1.5">
-                  <span>Interstellar</span>
-                  {!isPlaying && !isMuted && (
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#f0c978] animate-ping" />
-                  )}
+                <span className="text-[11px] font-medium text-white/90 group-hover:text-white transition">
+                  Interstellar
                 </span>
               </div>
             </button>
@@ -277,11 +253,7 @@ export default function App() {
               title={isMuted ? 'Play Interstellar Music' : 'Mute Interstellar Music'}
               className="p-1 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-[#8e96a5] hover:text-[#71b9ff] transition cursor-pointer"
             >
-              {isMuted ? (
-                <VolumeX className="w-3.5 h-3.5 text-[#606977]" />
-              ) : (
-                <Volume2 className="w-3.5 h-3.5 text-[#71b9ff]" />
-              )}
+              {isMuted ? <VolumeX className="w-3.5 h-3.5 text-[#606977]" /> : <Volume2 className="w-3.5 h-3.5 text-[#71b9ff]" />}
             </button>
           </div>
         </div>

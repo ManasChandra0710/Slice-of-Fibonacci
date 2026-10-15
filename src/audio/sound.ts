@@ -19,18 +19,30 @@ class SoundEngine {
   private isProceduralActive: boolean = false;
   private proceduralInterval: number | null = null;
   private pausedByVisibilityChange: boolean = false;
-  private unlockListenersAttached: boolean = false;
 
   constructor() {
     if (typeof window !== 'undefined') {
       // Setup audio element for Interstellar theme
       this.initAudioElement();
 
-      // Attempt immediate autoplay when user enters the website
+      // Autoplay by default when user enters the website
       this.playInterstellar().catch(() => {});
 
-      // Setup capturing gesture listeners so ANY interaction on the page immediately starts audio
-      this.setupUserUnlockListeners();
+      // Fallback listener for first user interaction if browser policy blocked un-interacted autoplay
+      const unlockAudio = () => {
+        if (!this.isMuted && !this.isPlaying) {
+          this.playInterstellar().catch(() => {});
+        }
+      };
+
+      const unlockEvents = ['pointerdown', 'touchstart', 'keydown', 'click', 'wheel'];
+      const triggerUnlock = () => {
+        unlockAudio();
+        unlockEvents.forEach((ev) => window.removeEventListener(ev, triggerUnlock));
+      };
+      unlockEvents.forEach((ev) => {
+        window.addEventListener(ev, triggerUnlock, { passive: true, once: true });
+      });
 
       // Tab visibility listener:
       // When user goes to another tab, pause the background music.
@@ -51,48 +63,10 @@ class SoundEngine {
     }
   }
 
-  private setupUserUnlockListeners() {
-    if (this.unlockListenersAttached || typeof window === 'undefined') return;
-    this.unlockListenersAttached = true;
-
-    const onUserGesture = () => {
-      if (this.isMuted) return;
-
-      this.initAudioElement();
-      if (this.audioEl) {
-        this.audioEl.muted = false;
-        this.audioEl.volume = this.volume;
-        this.audioEl
-          .play()
-          .then(() => {
-            this.isPlaying = true;
-            this.notify();
-            cleanup();
-          })
-          .catch(() => {
-            // Keep listening if browser didn't accept this specific event
-          });
-      }
-    };
-
-    const cleanup = () => {
-      gestureEvents.forEach((ev) => window.removeEventListener(ev, onUserGesture, true));
-      document.removeEventListener('pointerdown', onUserGesture, true);
-      this.unlockListenersAttached = false;
-    };
-
-    const gestureEvents = ['pointerdown', 'mousedown', 'touchstart', 'touchend', 'keydown', 'click'];
-    gestureEvents.forEach((ev) => {
-      window.addEventListener(ev, onUserGesture, { capture: true, passive: true });
-    });
-    document.addEventListener('pointerdown', onUserGesture, { capture: true, passive: true });
-  }
-
   private initAudioElement() {
     if (typeof window === 'undefined' || this.audioEl) return;
     try {
-      const existing = document.getElementById('bgm-audio') as HTMLAudioElement | null;
-      this.audioEl = existing || new Audio('/audio/interstellar.mp3');
+      this.audioEl = new Audio('/audio/interstellar.mp3');
       this.audioEl.loop = true;
       this.audioEl.preload = 'auto';
       this.audioEl.volume = this.volume;
@@ -154,7 +128,6 @@ class SoundEngine {
 
     if (this.audioEl) {
       try {
-        this.audioEl.muted = false;
         this.audioEl.volume = this.volume;
         await this.audioEl.play();
         this.isPlaying = true;
@@ -162,11 +135,11 @@ class SoundEngine {
         return;
       } catch {
         // Browser autoplay blocked until direct interaction
-        this.isPlaying = false;
-        this.notify();
-        this.setupUserUnlockListeners();
       }
     }
+
+    // Procedural fallback
+    this.startProceduralInterstellar();
   }
 
   private pauseForVisibility(): void {
@@ -415,9 +388,6 @@ class SoundEngine {
    * Subtle tick on UI interactions / typing
    */
   public playClick(): void {
-    if (!this.isMuted && !this.isPlaying && this.audioEl) {
-      this.playInterstellar().catch(() => {});
-    }
     if (this.isMuted) return;
     this.initContext();
     if (!this.ctx) return;
