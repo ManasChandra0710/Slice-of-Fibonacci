@@ -121,8 +121,8 @@ export async function generateShareCard(
   }
   ctx.restore();
 
-  // Retrieve the website's exact 3D spiral positions and digit stream
-  const spiralCount = 650;
+  // Retrieve the website's exact 3D spiral positions and digit stream (750 points)
+  const spiralCount = 750;
   const positions = generateSpiralPositions(spiralCount);
   const digitStream = getFibonacciDigitStream(spiralCount);
 
@@ -139,8 +139,8 @@ export async function generateShareCard(
   // Draw the Golden Spiral filament line connecting all orbs (authentic website curve)
   ctx.save();
   // Soft blue ambient filament glow
-  ctx.strokeStyle = 'rgba(113, 185, 255, 0.22)';
-  ctx.lineWidth = 4.5;
+  ctx.strokeStyle = 'rgba(74, 130, 184, 0.4)';
+  ctx.lineWidth = 3.6;
   ctx.beginPath();
   for (let i = 0; i < spiralCount; i++) {
     const sx = discCenterX + positions[i * 3] * spiralScale;
@@ -151,21 +151,13 @@ export async function generateShareCard(
   ctx.stroke();
 
   // Core crisp filament line
-  ctx.strokeStyle = 'rgba(74, 130, 184, 0.65)';
-  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = 'rgba(113, 185, 255, 0.7)';
+  ctx.lineWidth = 1.5;
   ctx.stroke();
   ctx.restore();
 
-  // Highlight range for searched number on the spiral
-  const trailStart = Math.max(0, result.trailStartIndex % spiralCount);
-  const trailLen = Math.max(1, result.query.length);
-  const trailEnd = Math.min(spiralCount - 1, trailStart + trailLen - 1);
-
   // Draw regular glass orbs with website's 10 refractive digit colors
   for (let i = 0; i < spiralCount; i++) {
-    // Skip highlighted orbs for dedicated rendering on top
-    if (i >= trailStart && i <= trailEnd) continue;
-
     const sx = discCenterX + positions[i * 3] * spiralScale;
     const sy = discCenterY + positions[i * 3 + 2] * spiralScale;
     const char = digitStream[i] || '0';
@@ -177,86 +169,14 @@ export async function generateShareCard(
     ctx.beginPath();
     ctx.arc(sx, sy, orbR, 0, Math.PI * 2);
 
-    const grad = ctx.createRadialGradient(sx - 1, sy - 1, 0.2, sx, sy, orbR);
+    const grad = ctx.createRadialGradient(sx - 0.9, sy - 0.9, 0.2, sx, sy, orbR);
     grad.addColorStop(0, '#ffffff');
     grad.addColorStop(0.35, rule.color);
-    grad.addColorStop(1, hexToRgba(rule.color, 0.7));
+    grad.addColorStop(1, hexToRgba(rule.color, 0.75));
     ctx.fillStyle = grad;
     ctx.fill();
     ctx.restore();
   }
-
-  // Draw highlighted trail nodes with illuminated glow & digit labels
-  let primaryTargetX = discCenterX;
-  let primaryTargetY = discCenterY;
-
-  for (let i = trailStart; i <= trailEnd; i++) {
-    const sx = discCenterX + positions[i * 3] * spiralScale;
-    const sy = discCenterY + positions[i * 3 + 2] * spiralScale;
-
-    if (i === trailStart) {
-      primaryTargetX = sx;
-      primaryTargetY = sy;
-    }
-
-    const char = digitStream[i] || '0';
-    const digit = parseInt(char, 10) || 0;
-    const rule = DIGIT_RULES[digit];
-
-    ctx.save();
-    // Halo glow
-    ctx.shadowColor = '#f0c978';
-    ctx.shadowBlur = 18;
-    ctx.fillStyle = 'rgba(240, 201, 120, 0.55)';
-    ctx.beginPath();
-    ctx.arc(sx, sy, 14, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Enlarged glass orb
-    ctx.beginPath();
-    ctx.arc(sx, sy, 6.5, 0, Math.PI * 2);
-    const grad = ctx.createRadialGradient(sx - 1.5, sy - 1.5, 0.5, sx, sy, 6.5);
-    grad.addColorStop(0, '#ffffff');
-    grad.addColorStop(0.35, rule.color);
-    grad.addColorStop(1, '#090f19');
-    ctx.fillStyle = grad;
-    ctx.fill();
-
-    // Digit text above the orb
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 12px ui-monospace, SFMono-Regular, monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.shadowColor = rule.color;
-    ctx.shadowBlur = 8;
-    ctx.fillText(digit.toString(), sx, sy - 13);
-    ctx.restore();
-  }
-
-  // Golden Focal Reticle around the primary sequence node
-  ctx.save();
-  ctx.strokeStyle = '#f0c978';
-  ctx.lineWidth = 2.2;
-  ctx.shadowColor = 'rgba(240, 201, 120, 0.85)';
-  ctx.shadowBlur = 16;
-  ctx.beginPath();
-  ctx.arc(primaryTargetX, primaryTargetY, 32, 0, Math.PI * 2);
-  ctx.stroke();
-
-  // Reticle crosshair ticks
-  ctx.strokeStyle = 'rgba(240, 201, 120, 0.65)';
-  ctx.lineWidth = 1.4;
-  ctx.beginPath();
-  ctx.moveTo(primaryTargetX - 38, primaryTargetY);
-  ctx.lineTo(primaryTargetX - 25, primaryTargetY);
-  ctx.moveTo(primaryTargetX + 25, primaryTargetY);
-  ctx.lineTo(primaryTargetX + 38, primaryTargetY);
-  ctx.moveTo(primaryTargetX, primaryTargetY - 38);
-  ctx.lineTo(primaryTargetX, primaryTargetY - 25);
-  ctx.moveTo(primaryTargetX, primaryTargetY + 25);
-  ctx.lineTo(primaryTargetX, primaryTargetY + 38);
-  ctx.stroke();
-  ctx.restore();
 
   // --- 3. Branding Header ---
   ctx.textAlign = 'center';

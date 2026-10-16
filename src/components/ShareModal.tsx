@@ -104,9 +104,11 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     if (!shareCard || typeof navigator === 'undefined' || !navigator.share) return;
     setIsSharingNative(true);
 
+    // Pass caption in text and homepage URL in url field so native share sheets
+    // and apps (Chrome, iOS, Android) do not duplicate the link
     const shareData: ShareData = {
       title: 'Slice of Fibonacci',
-      text: `${SHARE_CAPTION}\n${ORIGINAL_HOMEPAGE_URL}`,
+      text: SHARE_CAPTION,
       url: ORIGINAL_HOMEPAGE_URL,
     };
 
