@@ -1,418 +1,319 @@
 /**
- * Interstellar Soundtrack & Spatial Audio Engine
- * Features:
- * - Hans Zimmer's iconic "Interstellar Main Theme / First Step"
- * - Smooth volume crossfading & state management
- * - Web Audio procedural Interstellar church organ backup synthesizer
- * - High-tech UI interaction and sequence fly swoosh sound effects
+ * Interstellar Soundtrack Audio Engine
+ *
+ * Implements a calm, immersive, cinematic background music experience:
+ * - Single HTMLAudioElement instance (strictly guarantees zero multiple audio overlap)
+ * - Page Visibility API integration: automatically pauses when tab is hidden or minimized;
+ *   resumes playback from the exact paused timestamp upon return.
+ * - Manual pause precedence: manual user pause takes absolute priority over visibility and interactions.
+ * - Smooth volume transitions: gentle 1200ms fade-in and 600ms fade-out to prevent clicks and abrupt jumps.
+ * - Autoplay handling: attempts automatic playback on load; if browser policy blocks it,
+ *   activates a clean, one-time listener that unlocks playback on the user's first interaction.
+ * - Complete removal of sound effects for an undisturbed, pure cinematic experience.
  */
 
-type SoundStateListener = (state: { isPlaying: boolean; isMuted: boolean }) => void;
+export interface MusicState {
+  isPlaying: boolean;
+  isPaused: boolean;
+  isMuted: boolean;
+}
 
-class SoundEngine {
-  private audioEl: HTMLAudioElement | null = null;
-  private ctx: AudioContext | null = null;
-  private isMuted: boolean = false;
+export type MusicStateListener = (state: MusicState) => void;
+
+class InterstellarAudioEngine {
+  private static instance: InterstellarAudioEngine;
+  private audio: HTMLAudioElement | null = null;
   private isPlaying: boolean = false;
-  private volume: number = 0.45;
-  private listeners: Set<SoundStateListener> = new Set();
-  private isProceduralActive: boolean = false;
-  private proceduralInterval: number | null = null;
-  private pausedByVisibilityChange: boolean = false;
+  private userPaused: boolean = false;
+  private pausedByVisibility: boolean = false;
+  private targetVolume: number = 0.35; // Comfortable, calm ambient background volume
+  private fadeInterval: number | null = null;
+  private unlockListenerAttached: boolean = false;
+  private hasInitialized: boolean = false;
+  private listeners: Set<MusicStateListener> = new Set();
 
   constructor() {
     if (typeof window !== 'undefined') {
-      // Setup audio element for Interstellar theme
-      this.initAudioElement();
-
-      // Autoplay by default when user enters the website
-      this.playInterstellar().catch(() => {});
-
-      // Fallback listener for first user interaction if browser policy blocked un-interacted autoplay
-      const unlockAudio = () => {
-        if (!this.isMuted && !this.isPlaying) {
-          this.playInterstellar().catch(() => {});
-        }
-      };
-
-      const unlockEvents = ['pointerdown', 'touchstart', 'keydown', 'click', 'wheel'];
-      const triggerUnlock = () => {
-        unlockAudio();
-        unlockEvents.forEach((ev) => window.removeEventListener(ev, triggerUnlock));
-      };
-      unlockEvents.forEach((ev) => {
-        window.addEventListener(ev, triggerUnlock, { passive: true, once: true });
-      });
-
-      // Tab visibility listener:
-      // When user goes to another tab, pause the background music.
-      // When user returns to this tab, resume the music smoothly.
-      document.addEventListener('visibilitychange', () => {
-        if (document.hidden) {
-          if (this.isPlaying && !this.isMuted) {
-            this.pausedByVisibilityChange = true;
-            this.pauseForVisibility();
-          }
-        } else {
-          if (this.pausedByVisibilityChange && !this.isMuted) {
-            this.pausedByVisibilityChange = false;
-            this.playInterstellar().catch(() => {});
-          }
-        }
-      });
+      this.init();
     }
   }
 
-  private initAudioElement() {
-    if (typeof window === 'undefined' || this.audioEl) return;
-    try {
-      this.audioEl = new Audio('/audio/interstellar.mp3');
-      this.audioEl.loop = true;
-      this.audioEl.preload = 'auto';
-      this.audioEl.volume = this.volume;
+  public static getInstance(): InterstellarAudioEngine {
+    if (!InterstellarAudioEngine.instance) {
+      InterstellarAudioEngine.instance = new InterstellarAudioEngine();
+    }
+    return InterstellarAudioEngine.instance;
+  }
 
-      this.audioEl.addEventListener('play', () => {
+  private init(): void {
+    if (this.hasInitialized || typeof window === 'undefined') return;
+    this.hasInitialized = true;
+
+    this.createAudioElement();
+    this.setupVisibilityListener();
+
+    // Attempt automatic playback upon entering the website
+    this.playWithFade().catch(() => {
+      // Autoplay blocked until first interaction
+      this.setupUnlockOnFirstInteraction();
+    });
+  }
+
+  private createAudioElement(): void {
+    if (this.audio || typeof window === 'undefined') return;
+
+    try {
+      this.audio = new Audio('/audio/interstellar.mp3');
+      this.audio.loop = true;
+      this.audio.preload = 'auto';
+      this.audio.volume = this.targetVolume;
+
+      this.audio.addEventListener('play', () => {
         this.isPlaying = true;
         this.notify();
       });
 
-      this.audioEl.addEventListener('pause', () => {
+      this.audio.addEventListener('pause', () => {
         this.isPlaying = false;
         this.notify();
       });
 
-      this.audioEl.addEventListener('error', () => {
-        // Fallback to procedural Interstellar organ if network / format issue
-        console.warn('Interstellar audio stream fallback to procedural organ');
-        if (!this.isMuted) {
-          this.startProceduralInterstellar();
-        }
+      this.audio.addEventListener('error', (e) => {
+        // Handle audio error gracefully without breaking application
+        console.warn('Interstellar audio playback notice:', e);
+        this.isPlaying = false;
+        this.notify();
       });
-    } catch {
-      // Audio element not supported
+    } catch (err) {
+      console.warn('HTMLAudioElement not supported in this environment', err);
     }
   }
 
-  private initContext() {
-    if (!this.ctx && typeof window !== 'undefined') {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (AudioCtx) {
-        this.ctx = new AudioCtx();
-      }
-    }
-    if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume().catch(() => {});
-    }
-  }
+  /**
+   * Listen to Page Visibility API:
+   * Pause immediately when tab/window is hidden, resume from exact position when returning.
+   */
+  private setupVisibilityListener(): void {
+    if (typeof document === 'undefined') return;
 
-  public subscribe(listener: SoundStateListener): () => void {
-    this.listeners.add(listener);
-    listener({ isPlaying: this.isPlaying, isMuted: this.isMuted });
-    return () => this.listeners.delete(listener);
-  }
-
-  private notify() {
-    const state = { isPlaying: this.isPlaying, isMuted: this.isMuted };
-    this.listeners.forEach((l) => {
-      try {
-        l(state);
-      } catch {
-        // Listener error ignored
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        // When user switches to another tab or minimizes browser:
+        // Pause playback if it was actively playing, and remember it was paused by visibility
+        if (this.isPlaying && !this.userPaused) {
+          this.pausedByVisibility = true;
+          this.pauseWithFade(false); // Visibility pause (not manual)
+        }
+      } else {
+        // When user returns to the tab:
+        // Only resume if it was paused because of visibility AND user hasn't manually paused
+        if (this.pausedByVisibility && !this.userPaused) {
+          this.pausedByVisibility = false;
+          this.playWithFade().catch(() => {});
+        }
       }
     });
   }
 
-  public async playInterstellar(): Promise<void> {
-    if (this.isMuted) return;
-    this.initAudioElement();
+  /**
+   * One-time user interaction listener if browser autoplay policy blocked initial start
+   */
+  private setupUnlockOnFirstInteraction(): void {
+    if (this.unlockListenerAttached || typeof window === 'undefined') return;
+    this.unlockListenerAttached = true;
 
-    if (this.audioEl) {
-      try {
-        this.audioEl.volume = this.volume;
-        await this.audioEl.play();
-        this.isPlaying = true;
-        this.notify();
-        return;
-      } catch {
-        // Browser autoplay blocked until direct interaction
+    const unlockHandler = () => {
+      // Immediately detach all listeners so it triggers strictly ONCE
+      const events = ['click', 'keydown', 'touchstart', 'pointerdown'];
+      events.forEach((ev) => window.removeEventListener(ev, unlockHandler));
+      this.unlockListenerAttached = false;
+
+      // Start playback if user has not explicitly chosen to pause
+      if (!this.userPaused && !this.isPlaying && !document.hidden) {
+        this.playWithFade().catch(() => {});
       }
+    };
+
+    const events = ['click', 'keydown', 'touchstart', 'pointerdown'];
+    events.forEach((ev) => {
+      window.addEventListener(ev, unlockHandler, { once: true, passive: true });
+    });
+  }
+
+  private cancelFade(): void {
+    if (this.fadeInterval !== null) {
+      window.clearInterval(this.fadeInterval);
+      this.fadeInterval = null;
     }
-
-    // Procedural fallback
-    this.startProceduralInterstellar();
-  }
-
-  private pauseForVisibility(): void {
-    if (this.audioEl && !this.audioEl.paused) {
-      this.audioEl.pause();
-    }
-    this.stopProceduralInterstellar();
-    this.isPlaying = false;
-    this.notify();
-  }
-
-  public pauseInterstellar(): void {
-    this.pausedByVisibilityChange = false;
-    if (this.audioEl && !this.audioEl.paused) {
-      // Smooth fade-out before pause
-      const initialVol = this.audioEl.volume;
-      const fadeStep = initialVol / 8;
-      const fade = setInterval(() => {
-        if (!this.audioEl) {
-          clearInterval(fade);
-          return;
-        }
-        if (this.audioEl.volume > fadeStep) {
-          this.audioEl.volume = Math.max(0, Math.min(1, this.audioEl.volume - fadeStep));
-        } else {
-          clearInterval(fade);
-          this.audioEl.pause();
-          this.audioEl.volume = this.volume;
-          this.isPlaying = false;
-          this.notify();
-        }
-      }, 35);
-    } else {
-      this.isPlaying = false;
-      this.notify();
-    }
-    this.stopProceduralInterstellar();
-  }
-
-  public setMuted(muted: boolean): void {
-    this.isMuted = muted;
-    this.pausedByVisibilityChange = false;
-    if (muted) {
-      if (this.audioEl) {
-        this.audioEl.pause();
-      }
-      this.stopProceduralInterstellar();
-      this.isPlaying = false;
-    } else {
-      if (this.audioEl) {
-        this.audioEl.muted = false;
-      }
-      this.playInterstellar().catch(() => {});
-    }
-    this.notify();
-  }
-
-  public getMuted(): boolean {
-    return this.isMuted;
-  }
-
-  public getIsPlaying(): boolean {
-    return this.isPlaying && !this.isMuted;
-  }
-
-  public toggleMute(): boolean {
-    this.setMuted(!this.isMuted);
-    return this.isMuted;
-  }
-
-  public startAmbient(): void {
-    this.playInterstellar().catch(() => {});
   }
 
   /**
-   * Procedural Interstellar Organ & Clock Ticking Synthesizer (Fallback & Cosmic Drone)
-   * Plays Hans Zimmer's iconic "First Step" progression: Am - Em - F - C - G
-   * with authentic organ harmonics and ticking pendulum
+   * Smoothly transitions audio volume to prevent sudden changes, pops, or glitches
    */
-  private startProceduralInterstellar(): void {
-    if (this.isMuted || this.isProceduralActive) return;
-    this.initContext();
-    if (!this.ctx) return;
+  private fadeVolume(
+    from: number,
+    to: number,
+    durationMs: number,
+    onComplete?: () => void
+  ): void {
+    if (!this.audio) return;
+    this.cancelFade();
+
+    const steps = 24;
+    const intervalMs = Math.max(16, durationMs / steps);
+    const stepDelta = (to - from) / steps;
+    let currentStep = 0;
+
+    this.audio.volume = Math.max(0, Math.min(1, from));
+
+    this.fadeInterval = window.setInterval(() => {
+      if (!this.audio) {
+        this.cancelFade();
+        return;
+      }
+
+      currentStep++;
+      const nextVol = Math.max(0, Math.min(1, from + stepDelta * currentStep));
+      this.audio.volume = nextVol;
+
+      if (currentStep >= steps) {
+        this.audio.volume = Math.max(0, Math.min(1, to));
+        this.cancelFade();
+        if (onComplete) onComplete();
+      }
+    }, intervalMs);
+  }
+
+  /**
+   * Starts background playback with a gentle 1.2s fade-in
+   */
+  public async playWithFade(): Promise<void> {
+    if (this.userPaused) return;
+    this.createAudioElement();
+    if (!this.audio) return;
 
     try {
-      this.isProceduralActive = true;
+      this.cancelFade();
+
+      // Start from near-zero volume for a smooth cinematic entrance
+      this.audio.volume = 0.02;
+
+      const playPromise = this.audio.play();
+      if (playPromise !== undefined) {
+        await playPromise;
+      }
+
       this.isPlaying = true;
       this.notify();
 
-      const chords = [
-        // Am (A2, E3, A3, C4, E4)
-        { bass: 110.0, notes: [220.0, 261.63, 329.63, 440.0, 523.25] },
-        // Em (E2, B2, E3, G3, B3)
-        { bass: 82.41, notes: [164.81, 196.0, 246.94, 329.63, 392.0] },
-        // F (F2, C3, F3, A3, C4)
-        { bass: 87.31, notes: [174.61, 220.0, 261.63, 349.23, 440.0] },
-        // C (C2, G2, C3, E3, G3)
-        { bass: 65.41, notes: [130.81, 196.0, 261.63, 329.63, 392.0] },
-      ];
-
-      let chordIndex = 0;
-      const playStep = () => {
-        if (!this.isProceduralActive || !this.ctx || this.isMuted) return;
-        const currentChord = chords[chordIndex % chords.length];
-        chordIndex++;
-
-        const now = this.ctx.currentTime;
-        const duration = 4.2;
-
-        // Church pipe organ harmonics
-        currentChord.notes.forEach((freq, i) => {
-          if (!this.ctx) return;
-          const osc = this.ctx.createOscillator();
-          const gain = this.ctx.createGain();
-
-          osc.type = i % 2 === 0 ? 'sine' : 'triangle';
-          osc.frequency.setValueAtTime(freq, now);
-
-          // Subtle organ vibrato
-          osc.detune.setValueAtTime((Math.random() - 0.5) * 6, now);
-
-          gain.gain.setValueAtTime(0.0001, now);
-          gain.gain.linearRampToValueAtTime(0.022 / (i + 1), now + 1.2);
-          gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-
-          osc.connect(gain);
-          gain.connect(this.ctx.destination);
-
-          osc.start(now);
-          osc.stop(now + duration + 0.1);
-        });
-
-        // Zimmer Ticking Clock motif (each 1.05s)
-        for (let t = 0; t < 4; t++) {
-          const tickTime = now + t * 1.05;
-          const tickOsc = this.ctx.createOscillator();
-          const tickGain = this.ctx.createGain();
-
-          tickOsc.type = 'sawtooth';
-          tickOsc.frequency.setValueAtTime(1400, tickTime);
-          tickOsc.frequency.exponentialRampToValueAtTime(280, tickTime + 0.025);
-
-          tickGain.gain.setValueAtTime(0.012, tickTime);
-          tickGain.gain.exponentialRampToValueAtTime(0.0001, tickTime + 0.025);
-
-          tickOsc.connect(tickGain);
-          tickGain.connect(this.ctx.destination);
-
-          tickOsc.start(tickTime);
-          tickOsc.stop(tickTime + 0.03);
-        }
-      };
-
-      playStep();
-      this.proceduralInterval = window.setInterval(playStep, 4200);
+      // Gentle fade-in over 1200ms up to target volume
+      this.fadeVolume(this.audio.volume, this.targetVolume, 1200);
     } catch {
-      // Audio error handled
-    }
-  }
-
-  private stopProceduralInterstellar(): void {
-    this.isProceduralActive = false;
-    if (this.proceduralInterval !== null) {
-      clearInterval(this.proceduralInterval);
-      this.proceduralInterval = null;
+      // Browser autoplay policy prevented playback; will unlock on first user interaction
+      this.isPlaying = false;
+      this.notify();
+      this.setupUnlockOnFirstInteraction();
     }
   }
 
   /**
-   * Sound effect when flying to a sequence
+   * Pauses background playback with a gentle 600ms fade-out
    */
-  public playFlySwoosh(): void {
-    if (this.isMuted) return;
-    this.initContext();
-    if (!this.ctx) return;
-
-    try {
-      const now = this.ctx.currentTime;
-      const osc = this.ctx.createOscillator();
-      const filter = this.ctx.createBiquadFilter();
-      const gain = this.ctx.createGain();
-
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(80, now);
-      osc.frequency.exponentialRampToValueAtTime(610, now + 0.8);
-      osc.frequency.exponentialRampToValueAtTime(144, now + 1.4);
-
-      filter.type = 'lowpass';
-      filter.frequency.setValueAtTime(400, now);
-      filter.frequency.exponentialRampToValueAtTime(2500, now + 0.7);
-      filter.frequency.exponentialRampToValueAtTime(300, now + 1.4);
-      filter.Q.setValueAtTime(4, now);
-
-      gain.gain.setValueAtTime(0.001, now);
-      gain.gain.linearRampToValueAtTime(0.08, now + 0.3);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.4);
-
-      osc.connect(filter);
-      filter.connect(gain);
-      gain.connect(this.ctx.destination);
-
-      osc.start(now);
-      osc.stop(now + 1.45);
-    } catch {
-      // Ignore audio failure
+  public pauseWithFade(isManual: boolean = false): void {
+    if (isManual) {
+      this.userPaused = true;
+      this.pausedByVisibility = false;
     }
+
+    if (!this.audio || this.audio.paused) {
+      this.isPlaying = false;
+      this.notify();
+      return;
+    }
+
+    const currentVol = this.audio.volume;
+
+    // Gentle fade-out over 600ms, then pause without resetting playback position
+    this.fadeVolume(currentVol, 0.01, 600, () => {
+      if (this.audio) {
+        this.audio.pause();
+        this.audio.volume = this.targetVolume; // Restored for next play
+      }
+      this.isPlaying = false;
+      this.notify();
+    });
   }
 
   /**
-   * Crystalline target lock chime
+   * Manual play/pause toggle from UI controls
    */
-  public playTargetLock(): void {
-    if (this.isMuted) return;
-    this.initContext();
-    if (!this.ctx) return;
-
-    try {
-      const now = this.ctx.currentTime;
-      const notes = [610, 987, 1597];
-
-      notes.forEach((freq, idx) => {
-        if (!this.ctx) return;
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(freq, now + idx * 0.06);
-
-        const startTime = now + idx * 0.06;
-        gain.gain.setValueAtTime(0.001, startTime);
-        gain.gain.linearRampToValueAtTime(0.06 / (idx + 1), startTime + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.8);
-
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-
-        osc.start(startTime);
-        osc.stop(startTime + 0.85);
-      });
-    } catch {
-      // Audio handled safely
+  public togglePlayPause(): boolean {
+    if (this.isPlaying) {
+      this.pauseWithFade(true); // Manual pause
+      return false;
+    } else {
+      this.userPaused = false;
+      this.pausedByVisibility = false;
+      this.playWithFade().catch(() => {});
+      return true;
     }
   }
 
-  /**
-   * Subtle tick on UI interactions / typing
-   */
-  public playClick(): void {
-    if (this.isMuted) return;
-    this.initContext();
-    if (!this.ctx) return;
-
-    try {
-      const now = this.ctx.currentTime;
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(1200, now);
-      osc.frequency.exponentialRampToValueAtTime(2400, now + 0.03);
-
-      gain.gain.setValueAtTime(0.02, now);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.03);
-
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-
-      osc.start(now);
-      osc.stop(now + 0.035);
-    } catch {
-      // Audio handled safely
-    }
+  public subscribe(listener: MusicStateListener): () => void {
+    this.listeners.add(listener);
+    listener(this.getState());
+    return () => this.listeners.delete(listener);
   }
+
+  private notify(): void {
+    const state = this.getState();
+    this.listeners.forEach((listener) => {
+      try {
+        listener(state);
+      } catch {
+        // Safe listener execution
+      }
+    });
+  }
+
+  public getState(): MusicState {
+    return {
+      isPlaying: this.isPlaying,
+      isPaused: !this.isPlaying || this.userPaused,
+      isMuted: !this.isPlaying || this.userPaused,
+    };
+  }
+
+  public getIsPlaying(): boolean {
+    return this.isPlaying;
+  }
+
+  public getUserPaused(): boolean {
+    return this.userPaused;
+  }
+
+  // --- Compatibility helpers for existing codebase with zero sound effects ---
+  public playInterstellar(): Promise<void> {
+    return this.playWithFade();
+  }
+
+  public pauseInterstellar(): void {
+    this.pauseWithFade(true);
+  }
+
+  public toggleMute(): boolean {
+    const playing = this.togglePlayPause();
+    return !playing;
+  }
+
+  public getMuted(): boolean {
+    return !this.isPlaying || this.userPaused;
+  }
+
+  // No-op dummy methods ensuring no crashes if any legacy call persists
+  public playClick(): void {}
+  public playFlySwoosh(): void {}
+  public playTargetLock(): void {}
 }
 
-export const soundEngine = new SoundEngine();
+export const soundEngine = InterstellarAudioEngine.getInstance();

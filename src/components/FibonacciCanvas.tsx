@@ -7,7 +7,6 @@ import {
   DIGIT_RULES,
   FibonacciMatchResult,
 } from '../math/fibonacci';
-import { soundEngine } from '../audio/sound';
 import { ZoomIn, ZoomOut, RotateCcw, Sparkles, Move, Compass } from 'lucide-react';
 
 interface FibonacciCanvasProps {
@@ -58,14 +57,12 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     e.stopPropagation();
     stateRef.current.orbitAngles.radius = Math.max(12, stateRef.current.orbitAngles.radius - 7);
     stateRef.current.isFlying = false;
-    soundEngine.playClick();
   };
 
   const handleZoomOut = (e: React.MouseEvent) => {
     e.stopPropagation();
     stateRef.current.orbitAngles.radius = Math.min(85, stateRef.current.orbitAngles.radius + 7);
     stateRef.current.isFlying = false;
-    soundEngine.playClick();
   };
 
   const handleResetOrbit = (e: React.MouseEvent) => {
@@ -73,14 +70,12 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     stateRef.current.orbitAngles = { theta: 0.9, phi: 1.15, radius: 44 };
     stateRef.current.orbitTarget.set(0, 0, 0);
     stateRef.current.isFlying = false;
-    soundEngine.playClick();
   };
 
   const handleToggleDragMode = (e: React.MouseEvent) => {
     e.stopPropagation();
     const next = dragMode === 'move' ? 'orbit' : 'move';
     setDragMode(next);
-    soundEngine.playClick();
   };
 
   // Keyboard listener for Ctrl / Meta key state
@@ -118,7 +113,6 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
       stateRef.current.isFlying = true;
       stateRef.current.flyProgress = 0;
       stateRef.current.shockwaveProgress = 0;
-      soundEngine.playFlySwoosh();
     } else {
       stateRef.current.hasHighlight = false;
     }
@@ -673,7 +667,6 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
           stateRef.current.isFlying = false;
           stateRef.current.orbitTarget.copy(targetCoord);
           stateRef.current.orbitAngles.radius = 11;
-          soundEngine.playTargetLock();
         }
       } else {
         // Slow ambient orbit only when idle

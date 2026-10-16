@@ -27,8 +27,11 @@ export const DIGIT_RULES: DigitRule[] = [
 export interface FibonacciMatchResult {
   query: string;
   n: number;
-  pos: number; // 1-based position inside F(n)
-  term: string; // Decimal string of F(n)
+  pos: number; // 1-based position inside individual term F(n)
+  streamPos: number; // 1-based exact position in continuous stream 0112358...
+  streamSnippetBefore: string;
+  streamSnippetAfter: string;
+  term: string; // Complete decimal string of F(n)
   termLength: number;
   before: string;
   match: string;
@@ -40,7 +43,8 @@ export interface FibonacciMatchResult {
 export const PHI = 1.618033988749895;
 
 /**
- * Pre-generate the continuous digit stream of Fibonacci numbers
+ * Pre-generate the continuous digit stream of Fibonacci numbers:
+ * 0 1 1 2 3 5 8 13 21 34 55 89 144 ...
  */
 let cachedStream = '';
 export function getFibonacciDigitStream(minDigits: number = 2000): string {
@@ -62,6 +66,37 @@ export function getFibonacciDigitStream(minDigits: number = 2000): string {
 }
 
 /**
+ * Extracts surrounding context digits from the continuous Fibonacci stream (0112358...)
+ */
+export function getContinuousStreamSnippet(
+  streamPos1Based: number,
+  queryLength: number,
+  radius: number = 8
+): { before: string; after: string } {
+  const needed = streamPos1Based + queryLength + radius + 30;
+  // Limit generation for performance if streamPos is within safe bounds
+  const stream = getFibonacciDigitStream(Math.min(needed, 50000));
+  const matchStart0 = streamPos1Based - 1;
+  const matchEnd0 = matchStart0 + queryLength;
+
+  if (matchStart0 < stream.length) {
+    const start0 = Math.max(0, matchStart0 - radius);
+    const end0 = Math.min(stream.length, matchEnd0 + radius);
+    const before = stream.slice(start0, matchStart0);
+    const after = stream.slice(matchEnd0, end0);
+    return {
+      before: (start0 > 0 ? '… ' : '') + before,
+      after: after + (end0 < stream.length ? ' …' : ''),
+    };
+  }
+
+  return {
+    before: '… ',
+    after: ' …',
+  };
+}
+
+/**
  * Searches sequential Fibonacci terms starting from F(0) for the first term
  * containing the query string, running asynchronously in non-blocking batches.
  */
@@ -76,15 +111,10 @@ export function searchFibonacciTerm(
       return;
     }
 
-    const stream = getFibonacciDigitStream(2000);
-    let streamPos = stream.indexOf(clean);
-    if (streamPos === -1) {
-      streamPos = Math.abs(hashString(clean)) % 650;
-    }
-
     let a = 0n;
     let b = 1n;
     let n = 0;
+    let totalDigitsBefore = 0;
     const maxTerms = 8000;
     const batchSize = 120;
 
@@ -97,31 +127,34 @@ export function searchFibonacciTerm(
           const matchStart = pos;
           const matchEnd = pos + clean.length;
 
-          const contextRadius = 40;
-          const dispStart = Math.max(0, matchStart - contextRadius);
-          const dispEnd = Math.min(str.length, matchEnd + contextRadius);
-
-          const before = str.slice(dispStart, matchStart);
+          const before = str.slice(0, matchStart);
           const match = str.slice(matchStart, matchEnd);
-          const after = str.slice(matchEnd, dispEnd);
+          const after = str.slice(matchEnd);
 
+          // 1-based index in the continuous stream: 01123581321345589144...
+          const streamPos = totalDigitsBefore + pos + 1;
           const digits = clean.split('').map((c) => parseInt(c, 10));
+          const snippet = getContinuousStreamSnippet(streamPos, clean.length);
 
           resolve({
             query: clean,
             n,
-            pos: pos + 1, // 1-based index
+            pos: pos + 1, // 1-based index in F(n)
+            streamPos,
+            streamSnippetBefore: snippet.before,
+            streamSnippetAfter: snippet.after,
             term: str,
             termLength: str.length,
-            before: (dispStart > 0 ? '…' : '') + before,
+            before,
             match,
-            after: after + (dispEnd < str.length ? '…' : ''),
-            trailStartIndex: streamPos,
+            after,
+            trailStartIndex: (streamPos - 1) % 650,
             trailDigits: digits,
           });
           return;
         }
 
+        totalDigitsBefore += str.length;
         const next = a + b;
         a = b;
         b = next;
