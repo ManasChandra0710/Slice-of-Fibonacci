@@ -1,9 +1,4 @@
-import {
-  FibonacciMatchResult,
-  DIGIT_RULES,
-  generateSpiralPositions,
-  getFibonacciDigitStream,
-} from '../math/fibonacci';
+import { FibonacciMatchResult } from '../math/fibonacci';
 
 export const ORIGINAL_HOMEPAGE_URL = 'https://slice-of-fibonacci.vercel.app/';
 export const SHARE_CAPTION = 'Find where your number hides in the Fibonacci Sequence:';
@@ -84,99 +79,180 @@ export async function generateShareCard(
   ctx.lineWidth = 1;
   ctx.strokeRect(44, 44, width - 88, height - 88);
 
-  // --- 2. Top View of Fibonacci Spiral Design from the Actual Website ---
+  // --- 2. Top Visual: Golden Ratio Phyllotaxis Flower & Cosmic Vortex ---
+  // Inspired by sunflower florets, phyllotaxis seed spirals, golden ratio branching,
+  // and cosmic logarithmic vortexes connecting pure mathematics to the universe.
   const discCenterX = width / 2;
   const discCenterY = 275;
   const discRadius = 195;
 
-  // Viewport background circle with ambient nebula
-  const discGlow = ctx.createRadialGradient(
+  // Layer A: Deep celestial nebula core & ambient glow
+  const nebulaGlow = ctx.createRadialGradient(
     discCenterX,
     discCenterY,
-    15,
+    0,
     discCenterX,
     discCenterY,
-    discRadius + 15
+    discRadius + 28
   );
-  discGlow.addColorStop(0, 'rgba(12, 22, 40, 0.9)');
-  discGlow.addColorStop(0.7, 'rgba(7, 12, 24, 0.6)');
-  discGlow.addColorStop(1, 'rgba(4, 7, 15, 0)');
-  ctx.fillStyle = discGlow;
+  nebulaGlow.addColorStop(0, 'rgba(113, 185, 255, 0.22)');
+  nebulaGlow.addColorStop(0.35, 'rgba(14, 25, 48, 0.95)');
+  nebulaGlow.addColorStop(0.7, 'rgba(8, 14, 26, 0.7)');
+  nebulaGlow.addColorStop(1, 'rgba(3, 5, 10, 0)');
+  ctx.fillStyle = nebulaGlow;
   ctx.beginPath();
-  ctx.arc(discCenterX, discCenterY, discRadius + 15, 0, Math.PI * 2);
+  ctx.arc(discCenterX, discCenterY, discRadius + 28, 0, Math.PI * 2);
   ctx.fill();
 
-  // Celestial dust particles (authentic background stars)
+  // Subtle outer golden celestial boundary rings (Golden ratio divisions: 1.0, 0.618)
   ctx.save();
-  ctx.fillStyle = '#71b9ff';
-  for (let d = 0; d < 140; d++) {
-    const angle = d * 137.50776 * (Math.PI / 180);
-    const dist = (Math.sin(d * 23) * 0.48 + 0.5) * (discRadius - 12);
-    const dx = discCenterX + Math.cos(angle) * dist;
-    const dy = discCenterY + Math.sin(angle) * dist;
-    ctx.globalAlpha = 0.15 + (d % 4) * 0.08;
+  ctx.strokeStyle = 'rgba(240, 201, 120, 0.16)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 6]);
+  ctx.beginPath();
+  ctx.arc(discCenterX, discCenterY, discRadius, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(113, 185, 255, 0.2)';
+  ctx.setLineDash([2, 5]);
+  ctx.beginPath();
+  ctx.arc(discCenterX, discCenterY, discRadius * 0.6180339887, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  // Celestial stardust field (Vogel spiral distribution)
+  ctx.save();
+  const goldenAngleRad = 137.50776405 * (Math.PI / 180);
+  for (let s = 0; s < 110; s++) {
+    const starAngle = s * goldenAngleRad;
+    const starDist = Math.sqrt(s / 110) * (discRadius - 6);
+    const sx = discCenterX + Math.cos(starAngle) * starDist;
+    const sy = discCenterY + Math.sin(starAngle) * starDist;
+    ctx.fillStyle = s % 4 === 0 ? '#f0c978' : '#71b9ff';
+    ctx.globalAlpha = 0.12 + (s % 5) * 0.08;
     ctx.beginPath();
-    ctx.arc(dx, dy, d % 3 === 0 ? 1.4 : 1.0, 0, Math.PI * 2);
+    ctx.arc(sx, sy, (s % 7 === 0) ? 1.6 : 0.9, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.restore();
 
-  // Retrieve the website's exact 3D spiral positions and digit stream (750 points)
-  const spiralCount = 750;
-  const positions = generateSpiralPositions(spiralCount);
-  const digitStream = getFibonacciDigitStream(spiralCount);
-
-  // Compute maximum radius in top view (X-Z projection)
-  let maxR = 0;
-  for (let i = 0; i < spiralCount; i++) {
-    const x = positions[i * 3];
-    const z = positions[i * 3 + 2];
-    const r = Math.sqrt(x * x + z * z);
-    if (r > maxR) maxR = r;
-  }
-  const spiralScale = (discRadius - 16) / (maxR || 1);
-
-  // Draw the Golden Spiral filament line connecting all orbs (authentic website curve)
+  // Layer B: Continuous Logarithmic Golden Spiral Arms (Cosmic Galaxy Vortices)
+  // 4 graceful logarithmic spiral arms radiating outward in golden proportions
   ctx.save();
-  // Soft blue ambient filament glow
-  ctx.strokeStyle = 'rgba(74, 130, 184, 0.4)';
-  ctx.lineWidth = 3.6;
-  ctx.beginPath();
-  for (let i = 0; i < spiralCount; i++) {
-    const sx = discCenterX + positions[i * 3] * spiralScale;
-    const sy = discCenterY + positions[i * 3 + 2] * spiralScale;
-    if (i === 0) ctx.moveTo(sx, sy);
-    else ctx.lineTo(sx, sy);
-  }
-  ctx.stroke();
+  const goldenPhi = 1.6180339887;
+  const b = Math.log(goldenPhi) / (Math.PI / 2); // Logarithmic spiral growth rate
 
-  // Core crisp filament line
-  ctx.strokeStyle = 'rgba(113, 185, 255, 0.7)';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
+  for (let arm = 0; arm < 4; arm++) {
+    const armOffset = arm * (Math.PI / 2);
+    ctx.beginPath();
+    let first = true;
+    for (let t = 0; t <= 3.8; t += 0.04) {
+      const r = 5 * Math.exp(b * t);
+      if (r > discRadius - 8) break;
+      const theta = t * 2.4 + armOffset;
+      const px = discCenterX + Math.cos(theta) * r;
+      const py = discCenterY + Math.sin(theta) * r;
+      if (first) {
+        ctx.moveTo(px, py);
+        first = false;
+      } else {
+        ctx.lineTo(px, py);
+      }
+    }
+    // Ambient soft arm glow
+    ctx.strokeStyle = arm % 2 === 0 ? 'rgba(113, 185, 255, 0.28)' : 'rgba(240, 201, 120, 0.24)';
+    ctx.lineWidth = 2.4;
+    ctx.stroke();
+
+    // Crisp inner spine
+    ctx.strokeStyle = arm % 2 === 0 ? 'rgba(192, 222, 255, 0.45)' : 'rgba(255, 235, 175, 0.45)';
+    ctx.lineWidth = 1.0;
+    ctx.stroke();
+  }
   ctx.restore();
 
-  // Draw regular glass orbs with website's 10 refractive digit colors
-  for (let i = 0; i < spiralCount; i++) {
-    const sx = discCenterX + positions[i * 3] * spiralScale;
-    const sy = discCenterY + positions[i * 3 + 2] * spiralScale;
-    const char = digitStream[i] || '0';
-    const digit = parseInt(char, 10) || 0;
-    const rule = DIGIT_RULES[digit];
+  // Layer C: Master Vogel Phyllotaxis Sunflower Seed Florets
+  // Perfectly models nature's golden floret packing: r = c * sqrt(n), theta = n * 137.50776°
+  const floretCount = 580;
+  const cSpread = (discRadius - 16) / Math.sqrt(floretCount);
 
-    const orbR = 3.2;
+  for (let n = 1; n <= floretCount; n++) {
+    const theta = n * goldenAngleRad;
+    const r = cSpread * Math.sqrt(n);
+    const fx = discCenterX + Math.cos(theta) * r;
+    const fy = discCenterY + Math.sin(theta) * r;
+
+    // Relative progression from center floret (0) to outer edge (1)
+    const norm = n / floretCount;
+
+    // Organic floret radius: small in center, gracefully blooming outwards
+    const floretRadius = 1.3 + Math.sqrt(norm) * 3.0;
+
+    // Color gradient across the golden bloom:
+    // Core: brilliant gold (#ffffff -> #f0c978)
+    // Mid: deep sapphire azure to cyan (#71b9ff -> #38bdf8)
+    // Rim: iridescent indigo crystal with golden dust
+    let floretColor: string;
+    let floretCore: string;
+
+    if (norm < 0.22) {
+      // Golden sunseed heart
+      floretColor = '#f0c978';
+      floretCore = '#ffffff';
+    } else if (norm < 0.6) {
+      // Transition to celestial electric blue
+      floretColor = '#71b9ff';
+      floretCore = '#cbe4ff';
+    } else if (norm < 0.85) {
+      // Deep cosmic sapphire
+      floretColor = '#4a90e2';
+      floretCore = '#92c2fe';
+    } else {
+      // Golden corona rim florets
+      floretColor = n % 2 === 0 ? '#e2b356' : '#71b9ff';
+      floretCore = '#ffffff';
+    }
+
     ctx.save();
     ctx.beginPath();
-    ctx.arc(sx, sy, orbR, 0, Math.PI * 2);
+    ctx.arc(fx, fy, floretRadius, 0, Math.PI * 2);
 
-    const grad = ctx.createRadialGradient(sx - 0.9, sy - 0.9, 0.2, sx, sy, orbR);
-    grad.addColorStop(0, '#ffffff');
-    grad.addColorStop(0.35, rule.color);
-    grad.addColorStop(1, hexToRgba(rule.color, 0.75));
-    ctx.fillStyle = grad;
+    const fGrad = ctx.createRadialGradient(
+      fx - floretRadius * 0.3,
+      fy - floretRadius * 0.3,
+      floretRadius * 0.1,
+      fx,
+      fy,
+      floretRadius
+    );
+    fGrad.addColorStop(0, floretCore);
+    fGrad.addColorStop(0.5, floretColor);
+    fGrad.addColorStop(1, hexToRgba(floretColor, 0.7));
+    ctx.fillStyle = fGrad;
     ctx.fill();
     ctx.restore();
   }
+
+  // Layer D: Luminous central singularity & Golden Ratio Emblem (Phi Φ)
+  const coreGlow = ctx.createRadialGradient(discCenterX, discCenterY, 0, discCenterX, discCenterY, 24);
+  coreGlow.addColorStop(0, '#ffffff');
+  coreGlow.addColorStop(0.3, 'rgba(240, 201, 120, 0.95)');
+  coreGlow.addColorStop(0.65, 'rgba(113, 185, 255, 0.45)');
+  coreGlow.addColorStop(1, 'rgba(7, 12, 24, 0)');
+  ctx.fillStyle = coreGlow;
+  ctx.beginPath();
+  ctx.arc(discCenterX, discCenterY, 24, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Delicate center Golden Seed node
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = 'rgba(255, 255, 255, 0.9)';
+  ctx.shadowBlur = 8;
+  ctx.beginPath();
+  ctx.arc(discCenterX, discCenterY, 3.8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
 
   // --- 3. Branding Header ---
   ctx.textAlign = 'center';

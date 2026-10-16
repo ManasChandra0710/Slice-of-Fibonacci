@@ -159,7 +159,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                 Share Fibonacci Result
               </h2>
               <p className="text-[11px] font-mono text-[#7d8fa6]">
-                Original top-view spiral & verified homepage link
+                Golden Ratio Phyllotaxis Cosmos & verified homepage link
               </p>
             </div>
           </div>
