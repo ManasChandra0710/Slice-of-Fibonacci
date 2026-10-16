@@ -6,7 +6,7 @@ import {
 } from '../math/fibonacci';
 
 export const ORIGINAL_HOMEPAGE_URL = 'https://slice-of-fibonacci.vercel.app/';
-export const SHARE_CAPTION = 'Find where your number hides in the Fibonacci Series:';
+export const SHARE_CAPTION = 'Find where your number hides in the Fibonacci Sequence:';
 
 export interface GeneratedShareCard {
   canvas: HTMLCanvasElement;
