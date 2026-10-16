@@ -74,6 +74,9 @@ export default function App() {
     setInputValue('');
     setPreviewQuery('');
     setMatchResult(null);
+    if (typeof document !== 'undefined') {
+      document.title = 'Slice of Fibonacci';
+    }
     if (typeof window !== 'undefined' && window.location.pathname !== '/') {
       window.history.pushState({}, '', '/');
     }
@@ -96,6 +99,11 @@ export default function App() {
       if (window.location.pathname !== targetPath) {
         window.history.pushState({ number: clean }, '', targetPath);
       }
+    }
+
+    // Update document title for searched number
+    if (typeof document !== 'undefined') {
+      document.title = `${clean} in Fibonacci - Slice of Fibonacci`;
     }
 
     try {
@@ -127,6 +135,11 @@ export default function App() {
       if (window.location.search && window.history.replaceState) {
         window.history.replaceState({ number: initialNum }, '', `/${initialNum}`);
       }
+    } else if (window.location.pathname !== '/' && window.location.pathname !== '') {
+      // Handle malformed paths like /abc gracefully by returning to clean homepage
+      if (window.history.replaceState) {
+        window.history.replaceState({}, '', '/');
+      }
     }
   }, []);
 
@@ -142,6 +155,9 @@ export default function App() {
         setInputValue('');
         setPreviewQuery('');
         setMatchResult(null);
+        if (typeof document !== 'undefined') {
+          document.title = 'Slice of Fibonacci';
+        }
       }
     };
 
@@ -174,7 +190,7 @@ export default function App() {
       if (typeof navigator !== 'undefined' && navigator.share) {
         const shareData: ShareData = {
           title: 'Slice of Fibonacci',
-          text: `${SHARE_CAPTION}\n${ORIGINAL_HOMEPAGE_URL}`,
+          text: SHARE_CAPTION,
           url: ORIGINAL_HOMEPAGE_URL,
         };
 
