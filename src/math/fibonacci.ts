@@ -181,14 +181,6 @@ export function searchFibonacciTerm(
   });
 }
 
-function hashString(val: string): number {
-  let h = 0;
-  for (let i = 0; i < val.length; i++) {
-    h = (h * 31 + val.charCodeAt(i)) % 9973;
-  }
-  return h;
-}
-
 /**
  * Generates 3D coordinates for the Golden Logarithmic Spiral with uniform, generous spacing.
  * Uses arc-length step parameterization so orbs are never condensed or overlapping.

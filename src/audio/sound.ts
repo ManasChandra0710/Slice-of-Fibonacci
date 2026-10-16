@@ -338,6 +338,7 @@ class InterstellarAudioEngine {
     if (isManual) {
       this.userPaused = true;
       this.pausedByVisibility = false;
+      this.notify(); // Immediate UI update for instant feedback
     }
 
     if (!this.audio || this.audio.paused) {
@@ -362,7 +363,8 @@ class InterstellarAudioEngine {
    * Manual play/pause toggle triggered from top-right music controls
    */
   public togglePlayPause(): boolean {
-    if (this.isPlaying) {
+    const isActivelyPlaying = this.isPlaying && !this.userPaused;
+    if (isActivelyPlaying) {
       this.pauseWithFade(true); // Manual user pause
       return false;
     } else {
@@ -389,10 +391,11 @@ class InterstellarAudioEngine {
   }
 
   public getState(): MusicState {
+    const active = this.isPlaying && !this.userPaused;
     return {
-      isPlaying: this.isPlaying,
-      isPaused: !this.isPlaying || this.userPaused,
-      isMuted: !this.isPlaying || this.userPaused,
+      isPlaying: active,
+      isPaused: !active,
+      isMuted: !active,
     };
   }
 

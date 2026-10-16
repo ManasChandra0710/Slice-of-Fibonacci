@@ -47,7 +47,6 @@ export default function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [matchResult, setMatchResult] = useState<FibonacciMatchResult | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
-  const [isMuted, setIsMuted] = useState(soundEngine.getMuted());
   const [isPlaying, setIsPlaying] = useState(soundEngine.getIsPlaying());
   const [shareCopied, setShareCopied] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -63,7 +62,6 @@ export default function App() {
   // Subscribe to background music state
   useEffect(() => {
     const unsub = soundEngine.subscribe((state) => {
-      setIsMuted(state.isMuted);
       setIsPlaying(state.isPlaying);
     });
     return unsub;

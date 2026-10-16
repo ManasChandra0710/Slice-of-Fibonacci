@@ -2,11 +2,10 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import * as d3 from 'd3';
 import { FibonacciMatchResult, DIGIT_RULES, DigitRule } from '../math/fibonacci';
 import { soundEngine } from '../audio/sound';
-import { BarChart3, PieChart, Sparkles, Copy, Check, Info, ArrowUpRight, Hash, Layers } from 'lucide-react';
+import { BarChart3, PieChart, Copy, Check, Layers } from 'lucide-react';
 
 interface DigitDistributionChartProps {
   matchResult: FibonacciMatchResult | null;
-  onSearchTerm?: (query: string) => void;
 }
 
 export interface DigitStat {
@@ -23,7 +22,6 @@ const SAMPLE_SEGMENT = '11235813213455891442333776109871597258441816765109461771
 
 export const DigitDistributionChart: React.FC<DigitDistributionChartProps> = ({
   matchResult,
-  onSearchTerm,
 }) => {
   const [scope, setScope] = useState<'segment' | 'full' | 'query'>('segment');
   const [chartType, setChartType] = useState<'bar' | 'donut'>('bar');
