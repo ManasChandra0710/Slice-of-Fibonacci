@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { FibonacciMatchResult } from '../math/fibonacci';
-import { GeneratedShareCard } from '../utils/shareCard';
-import { Download, Link2, Copy, Share2, Check, X, Sparkles } from 'lucide-react';
+import {
+  GeneratedShareCard,
+  ORIGINAL_HOMEPAGE_URL,
+  SHARE_CAPTION,
+} from '../utils/shareCard';
+import { Download, Link2, Copy, Share2, Check, X, Sparkles, ExternalLink } from 'lucide-react';
 
 interface ShareModalProps {
   isOpen: boolean;
   onClose: () => void;
   matchResult: FibonacciMatchResult;
   shareCard: GeneratedShareCard | null;
-  shareUrl: string;
 }
 
 export const ShareModal: React.FC<ShareModalProps> = ({
@@ -16,9 +19,9 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   onClose,
   matchResult,
   shareCard,
-  shareUrl,
 }) => {
   const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedCaption, setCopiedCaption] = useState(false);
   const [copiedImage, setCopiedImage] = useState(false);
   const [isSharingNative, setIsSharingNative] = useState(false);
 
@@ -46,9 +49,20 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
   const handleCopyLink = async () => {
     try {
-      await navigator.clipboard.writeText(shareUrl);
+      await navigator.clipboard.writeText(ORIGINAL_HOMEPAGE_URL);
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2500);
+    } catch {
+      // Fallback
+    }
+  };
+
+  const handleCopyShareCaption = async () => {
+    try {
+      const fullText = `${SHARE_CAPTION}\n${ORIGINAL_HOMEPAGE_URL}`;
+      await navigator.clipboard.writeText(fullText);
+      setCopiedCaption(true);
+      setTimeout(() => setCopiedCaption(false), 2500);
     } catch {
       // Fallback
     }
@@ -64,7 +78,6 @@ export const ShareModal: React.FC<ShareModalProps> = ({
         setCopiedImage(true);
         setTimeout(() => setCopiedImage(false), 2500);
       } else {
-        // Fallback to downloading
         handleDownload();
       }
     } catch {
@@ -77,9 +90,9 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     setIsSharingNative(true);
 
     const shareData: ShareData = {
-      title: `Slice of Fibonacci — "${matchResult.query}" in 3D`,
-      text: `Found "${matchResult.query}" in Fibonacci term F(${matchResult.n.toLocaleString('en-US')}) at position #${matchResult.pos.toLocaleString('en-US')} (Stream position #${matchResult.streamPos.toLocaleString('en-US')})!\nExplore in 3D: ${shareUrl}`,
-      url: shareUrl,
+      title: 'Slice of Fibonacci',
+      text: `${SHARE_CAPTION}\n${ORIGINAL_HOMEPAGE_URL}`,
+      url: ORIGINAL_HOMEPAGE_URL,
     };
 
     try {
@@ -94,8 +107,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
       }
     } catch (err: unknown) {
       if ((err as Error)?.name !== 'AbortError') {
-        // Fallback to link copying
-        handleCopyLink();
+        handleCopyShareCaption();
       }
     } finally {
       setIsSharingNative(false);
@@ -130,7 +142,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                 Share Fibonacci Result
               </h2>
               <p className="text-[11px] font-mono text-[#7d8fa6]">
-                Position data & high-res shareable card ready
+                Original top-view spiral & verified homepage link
               </p>
             </div>
           </div>
@@ -148,7 +160,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
         {/* Modal Body: Scrollable with Preview & Actions */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-5">
           {/* Main Content Grid: Card Preview on Left, Quick Telemetry & Actions on Right */}
-          <div className="grid grid-cols-1 sm:grid-cols-12 gap-5 items-center">
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-5 items-start">
             {/* Share Card Image Preview */}
             <div className="sm:col-span-6 flex flex-col items-center">
               <div className="relative rounded-2xl overflow-hidden border border-[#f0c978]/30 shadow-[0_0_25px_rgba(240,201,120,0.2)] max-w-[280px] sm:max-w-full bg-[#050810] group">
@@ -160,11 +172,29 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                   />
                 ) : (
                   <div className="w-[260px] h-[325px] flex items-center justify-center text-xs font-mono text-[#7d8fa6]">
-                    Rendering Card...
+                    Rendering Spiral Card...
                   </div>
                 )}
                 <div className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-md bg-black/70 backdrop-blur-sm border border-white/10 text-[10px] font-mono text-[#f0c978]">
                   1080 × 1350 PNG
+                </div>
+              </div>
+
+              {/* Exact required text and link format beneath the image */}
+              <div className="mt-3.5 w-full p-3.5 rounded-xl bg-[#060a14] border border-[#f0c978]/30 text-center space-y-1.5 shadow-inner">
+                <div className="text-[12px] text-[#c5d4e8] font-medium tracking-wide">
+                  {SHARE_CAPTION}
+                </div>
+                <div>
+                  <a
+                    href={ORIGINAL_HOMEPAGE_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-[#f0c978] hover:text-white font-mono text-xs sm:text-[13px] font-bold hover:underline transition"
+                  >
+                    <span>{ORIGINAL_HOMEPAGE_URL}</span>
+                    <ExternalLink className="w-3 h-3 shrink-0" />
+                  </a>
                 </div>
               </div>
             </div>
@@ -233,6 +263,27 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                   )}
                 </button>
 
+                {/* Copy Complete Share Caption & Link */}
+                <button
+                  type="button"
+                  onClick={handleCopyShareCaption}
+                  className="w-full py-2.5 px-4 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] active:scale-[0.98] border border-white/10 hover:border-[#f0c978]/50 text-[#f0c978] font-mono text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                >
+                  {copiedCaption ? (
+                    <>
+                      <Check className="w-4 h-4 text-[#f0c978]" />
+                      <span className="text-[#f0c978] font-semibold">
+                        Caption & Link Copied ✓
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4 text-[#f0c978]" />
+                      <span>Copy Caption & Original Link</span>
+                    </>
+                  )}
+                </button>
+
                 {/* Copy Image to Clipboard */}
                 <button
                   type="button"
@@ -271,10 +322,10 @@ export const ShareModal: React.FC<ShareModalProps> = ({
             </div>
           </div>
 
-          {/* Share URL Pill Display */}
+          {/* Direct Homepage Link Pill */}
           <div className="p-3 bg-[#060a14] border border-white/[0.06] rounded-xl flex items-center justify-between gap-3 text-xs font-mono">
-            <span className="text-[#65768e] text-[11px] truncate select-all">
-              {shareUrl}
+            <span className="text-[#8898ac] text-[11px] truncate select-all">
+              {ORIGINAL_HOMEPAGE_URL}
             </span>
             <button
               type="button"

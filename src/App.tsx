@@ -3,7 +3,12 @@ import { FibonacciCanvas } from './components/FibonacciCanvas';
 import { searchFibonacciTerm, FibonacciMatchResult, DIGIT_RULES } from './math/fibonacci';
 import { soundEngine } from './audio/sound';
 import { ShareModal } from './components/ShareModal';
-import { generateShareCard, GeneratedShareCard } from './utils/shareCard';
+import {
+  generateShareCard,
+  GeneratedShareCard,
+  ORIGINAL_HOMEPAGE_URL,
+  SHARE_CAPTION,
+} from './utils/shareCard';
 import { Volume2, VolumeX, Sparkles, Send, Music, Share2, Check } from 'lucide-react';
 
 export default function App() {
@@ -112,18 +117,16 @@ export default function App() {
     if (!matchResult) return;
     setIsGeneratingShare(true);
 
-    const shareUrl = getShareUrl(matchResult.query);
-
     try {
-      const card = await generateShareCard(matchResult, shareUrl);
+      const card = await generateShareCard(matchResult);
       setShareCard(card);
 
       // Attempt native share with image file on supported mobile/desktop browsers
       if (typeof navigator !== 'undefined' && navigator.share) {
         const shareData: ShareData = {
-          title: `Slice of Fibonacci — "${matchResult.query}" in 3D`,
-          text: `Found "${matchResult.query}" in Fibonacci term F(${matchResult.n.toLocaleString('en-US')}) at position #${matchResult.pos.toLocaleString('en-US')} (Stream position #${matchResult.streamPos.toLocaleString('en-US')})!\nExplore in 3D: ${shareUrl}`,
-          url: shareUrl,
+          title: 'Slice of Fibonacci',
+          text: `${SHARE_CAPTION}\n${ORIGINAL_HOMEPAGE_URL}`,
+          url: ORIGINAL_HOMEPAGE_URL,
         };
 
         if (
@@ -151,7 +154,7 @@ export default function App() {
     } catch (err) {
       console.error('Failed to generate share card', err);
       try {
-        await navigator.clipboard.writeText(shareUrl);
+        await navigator.clipboard.writeText(`${SHARE_CAPTION}\n${ORIGINAL_HOMEPAGE_URL}`);
         setShareCopied(true);
         setTimeout(() => setShareCopied(false), 2500);
       } catch {}
@@ -585,7 +588,6 @@ export default function App() {
           onClose={() => setIsShareModalOpen(false)}
           matchResult={matchResult}
           shareCard={shareCard}
-          shareUrl={getShareUrl(matchResult.query)}
         />
       )}
     </div>
