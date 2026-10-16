@@ -307,7 +307,7 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     const spiralLine = new THREE.Line(lineGeo, lineMat);
     scene.add(spiralLine);
 
-    // --- 8. ADVANCED HIGHLIGHTING RIG ---
+    // --- 8. ADVANCED HIGHLIGHTING RIG (Instanced / Pooled Geometries & Shared Materials) ---
     const highlightGroup = new THREE.Group();
     scene.add(highlightGroup);
 
@@ -316,9 +316,20 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     const haloSprites: THREE.Sprite[] = [];
     const microRings: THREE.Mesh[] = [];
 
-    const ringGeometry = new THREE.RingGeometry(0.48, 0.58, 32);
+    // Pooled Shared Geometries & Materials to minimize memory footprint
+    const sharedRingGeometry = new THREE.RingGeometry(0.48, 0.58, 32);
+
+    // Shared sprite material for halo effects (per-sprite color tinting)
+    const sharedHaloMaterial = new THREE.SpriteMaterial({
+      map: orbHaloTexture,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
 
     for (let b = 0; b < maxBadges; b++) {
+      // Reusable sprite for digit badge
       const bMat = new THREE.SpriteMaterial({
         transparent: true,
         opacity: 0.95,
@@ -330,19 +341,14 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
       highlightGroup.add(bSprite);
       badgeSprites.push(bSprite);
 
-      const hMat = new THREE.SpriteMaterial({
-        map: orbHaloTexture,
-        transparent: true,
-        opacity: 0.85,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      });
-      const hSprite = new THREE.Sprite(hMat);
+      // Reusable halo sprite utilizing cloned shared material template
+      const hSprite = new THREE.Sprite(sharedHaloMaterial.clone());
       hSprite.scale.set(2.8, 2.8, 2.8);
       hSprite.visible = false;
       highlightGroup.add(hSprite);
       haloSprites.push(hSprite);
 
+      // Micro reticle ring reusing the single sharedRingGeometry instance (Geometry Pooling)
       const rMat = new THREE.MeshBasicMaterial({
         color: 0x71b9ff,
         side: THREE.DoubleSide,
@@ -351,7 +357,7 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
         blending: THREE.AdditiveBlending,
         depthWrite: false,
       });
-      const ringMesh = new THREE.Mesh(ringGeometry, rMat);
+      const ringMesh = new THREE.Mesh(sharedRingGeometry, rMat);
       ringMesh.visible = false;
       highlightGroup.add(ringMesh);
       microRings.push(ringMesh);
@@ -725,7 +731,8 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
       orbMaterial.dispose();
       lineGeo.dispose();
       lineMat.dispose();
-      ringGeometry.dispose();
+      sharedRingGeometry.dispose();
+      sharedHaloMaterial.dispose();
       conduitGeo.dispose();
       conduitMat.dispose();
       shockwaveGeo.dispose();

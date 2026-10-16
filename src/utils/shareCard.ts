@@ -26,11 +26,11 @@ function hexToRgba(hex: string, alpha: number = 1): string {
 
 /**
  * Generates a high-resolution 1080x1350 share card featuring:
- * 1. The authentic top view of the website's 3D Fibonacci spiral (using generateSpiralPositions)
+ * 1. Organic Golden-Ratio Nautilus Shell cross-section with 35 chambers & Vogel Sunflower Phyllotaxis core
  * 2. The searched number and its complete telemetry (Term, Position in Term, Stream Position)
  * 3. The continuous Fibonacci stream ribbon with highlighted query
  * 4. The exact original website URL and caption:
- *    "Find where your number hides in the Fibonacci Series:"
+ *    "Find where your number hides in the Fibonacci Sequence:"
  *    https://slice-of-fibonacci.vercel.app/
  */
 export async function generateShareCard(
@@ -79,14 +79,17 @@ export async function generateShareCard(
   ctx.lineWidth = 1;
   ctx.strokeRect(44, 44, width - 88, height - 88);
 
-  // --- 2. Top Visual: Golden Ratio Phyllotaxis Flower & Cosmic Vortex ---
-  // Inspired by sunflower florets, phyllotaxis seed spirals, golden ratio branching,
-  // and cosmic logarithmic vortexes connecting pure mathematics to the universe.
+  // --- 2. Top Visual: Organic Golden-Ratio Nautilus Shell & Phyllotaxis Harmony ---
+  // A museum-grade organic representation connecting Fibonacci mathematics to nature:
+  // - Cross-section of a Nautilus pompilius shell with 35 logarithmic camerae (chambers)
+  // - Curved convex septa walls, continuous siphuncular buoyancy tube, and nacreous pearl beads
+  // - Bioluminescent oceanic sapphire, electric cyan, and golden amber nacre gradients
+  // - Organic growth striations and an embryonic Vogel sunflower phyllotaxis floret core
   const discCenterX = width / 2;
   const discCenterY = 275;
   const discRadius = 195;
 
-  // Layer A: Deep celestial nebula core & ambient glow
+  // Layer A: Deep celestial nebula backdrop
   const nebulaGlow = ctx.createRadialGradient(
     discCenterX,
     discCenterY,
@@ -95,7 +98,7 @@ export async function generateShareCard(
     discCenterY,
     discRadius + 28
   );
-  nebulaGlow.addColorStop(0, 'rgba(113, 185, 255, 0.22)');
+  nebulaGlow.addColorStop(0, 'rgba(113, 185, 255, 0.18)');
   nebulaGlow.addColorStop(0.35, 'rgba(14, 25, 48, 0.95)');
   nebulaGlow.addColorStop(0.7, 'rgba(8, 14, 26, 0.7)');
   nebulaGlow.addColorStop(1, 'rgba(3, 5, 10, 0)');
@@ -121,136 +124,331 @@ export async function generateShareCard(
   ctx.setLineDash([]);
   ctx.restore();
 
-  // Celestial stardust field (Vogel spiral distribution)
+  // Celestial stardust field (Vogel golden-angle distribution)
   ctx.save();
   const goldenAngleRad = 137.50776405 * (Math.PI / 180);
-  for (let s = 0; s < 110; s++) {
+  for (let s = 0; s < 90; s++) {
     const starAngle = s * goldenAngleRad;
-    const starDist = Math.sqrt(s / 110) * (discRadius - 6);
+    const starDist = Math.sqrt(s / 90) * (discRadius - 6);
     const sx = discCenterX + Math.cos(starAngle) * starDist;
     const sy = discCenterY + Math.sin(starAngle) * starDist;
     ctx.fillStyle = s % 4 === 0 ? '#f0c978' : '#71b9ff';
     ctx.globalAlpha = 0.12 + (s % 5) * 0.08;
     ctx.beginPath();
-    ctx.arc(sx, sy, (s % 7 === 0) ? 1.6 : 0.9, 0, Math.PI * 2);
+    ctx.arc(sx, sy, (s % 7 === 0) ? 1.5 : 0.8, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.restore();
 
-  // Layer B: Continuous Logarithmic Golden Spiral Arms (Cosmic Galaxy Vortices)
-  // 4 graceful logarithmic spiral arms radiating outward in golden proportions
-  ctx.save();
-  const goldenPhi = 1.6180339887;
-  const b = Math.log(goldenPhi) / (Math.PI / 2); // Logarithmic spiral growth rate
+  // Layer B: Nautilus Logarithmic Geometry Setup
+  // Shell expansion constant b ~ 0.175 produces a classic golden logarithmic whorl
+  const b = 0.175;
+  const rot = 45 * (Math.PI / 180); // 45-degree rotation balances width and height into a circular frame
+  const thetaEnd = 5.6 * Math.PI;
 
-  for (let arm = 0; arm < 4; arm++) {
-    const armOffset = arm * (Math.PI / 2);
+  const getRout = (t: number) => Math.exp(b * t);
+  const getRin = (t: number) => {
+    if (t >= 2 * Math.PI) return Math.exp(b * (t - 2 * Math.PI));
+    return Math.exp(b * t) * Math.max(0.12, (t / (2 * Math.PI)) * Math.exp(-2 * Math.PI * b));
+  };
+
+  // Precompute bounds to center the nautilus shell inside the visual disc
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let t = 0; t <= thetaEnd; t += 0.02) {
+    const r = getRout(t);
+    const x = r * Math.cos(t + rot);
+    const y = r * Math.sin(t + rot);
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+
+  const w = maxX - minX;
+  const h = maxY - minY;
+  const targetSize = 345;
+  const scale = targetSize / Math.max(w, h);
+  const midX = (minX + maxX) / 2;
+  const midY = (minY + maxY) / 2;
+  const originX = discCenterX - midX * scale;
+  const originY = discCenterY - midY * scale;
+
+  const toCanvas = (r: number, t: number): [number, number] => [
+    originX + scale * r * Math.cos(t + rot),
+    originY + scale * r * Math.sin(t + rot),
+  ];
+
+  // Layer C: Partition the whorl into 35 organic camerae (chambers)
+  interface ChamberDef {
+    t0: number;
+    t1: number;
+    progress: number;
+  }
+  const chambers: ChamberDef[] = [];
+  let curTheta = 1.6 * Math.PI;
+  while (curTheta < thetaEnd) {
+    const progress = (curTheta - 1.6 * Math.PI) / (thetaEnd - 1.6 * Math.PI);
+    const step = 0.28 + progress * 0.18; // Exponential chamber growth
+    const nextTheta = Math.min(thetaEnd, curTheta + step);
+    chambers.push({ t0: curTheta, t1: nextTheta, progress });
+    curTheta = nextTheta;
+  }
+
+  // Draw each chamber cavity with glowing nacre gradients
+  chambers.forEach((ch) => {
+    const { t0, t1, progress } = ch;
+    ctx.save();
     ctx.beginPath();
-    let first = true;
-    for (let t = 0; t <= 3.8; t += 0.04) {
-      const r = 5 * Math.exp(b * t);
-      if (r > discRadius - 8) break;
-      const theta = t * 2.4 + armOffset;
-      const px = discCenterX + Math.cos(theta) * r;
-      const py = discCenterY + Math.sin(theta) * r;
-      if (first) {
-        ctx.moveTo(px, py);
-        first = false;
-      } else {
-        ctx.lineTo(px, py);
+
+    // 1. Outer curved wall from t0 to t1
+    const stepsOuter = 7;
+    for (let i = 0; i <= stepsOuter; i++) {
+      const t = t0 + (t1 - t0) * (i / stepsOuter);
+      const [px, py] = toCanvas(getRout(t), t);
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+
+    // 2. Distal septum curving convexly toward the aperture
+    const [inX1, inY1] = toCanvas(getRin(t1), t1);
+    const rMid1 = 0.52 * getRin(t1) + 0.48 * getRout(t1);
+    const [ctrlX1, ctrlY1] = toCanvas(rMid1, t1 + 0.15);
+    ctx.quadraticCurveTo(ctrlX1, ctrlY1, inX1, inY1);
+
+    // 3. Inner curved wall from t1 back to t0
+    const stepsInner = 7;
+    for (let i = stepsInner; i >= 0; i--) {
+      const t = t0 + (t1 - t0) * (i / stepsInner);
+      const [px, py] = toCanvas(getRin(t), t);
+      ctx.lineTo(px, py);
+    }
+
+    // 4. Proximal septum from t0 inner to t0 outer
+    const [outX0, outY0] = toCanvas(getRout(t0), t0);
+    const rMid0 = 0.52 * getRin(t0) + 0.48 * getRout(t0);
+    const [ctrlX0, ctrlY0] = toCanvas(rMid0, t0 + 0.15);
+    ctx.quadraticCurveTo(ctrlX0, ctrlY0, outX0, outY0);
+    ctx.closePath();
+
+    // Chamber gradient coloring:
+    // Outer mature chambers: deep cosmic sapphire with electric cyan bioluminescence
+    // Mid chambers: oceanic indigo with cerulean pearl
+    // Inner early chambers: warm golden amber nacre
+    const tMid = (t0 + t1) / 2;
+    const [gradP0X, gradP0Y] = toCanvas(getRin(tMid), tMid);
+    const [gradP1X, gradP1Y] = toCanvas(getRout(tMid), tMid);
+    const chGrad = ctx.createLinearGradient(gradP0X, gradP0Y, gradP1X, gradP1Y);
+
+    if (progress > 0.65) {
+      // Living & mature chambers
+      chGrad.addColorStop(0, 'rgba(8, 16, 36, 0.96)');
+      chGrad.addColorStop(0.45, 'rgba(18, 48, 100, 0.82)');
+      chGrad.addColorStop(0.85, 'rgba(38, 100, 180, 0.42)');
+      chGrad.addColorStop(1, 'rgba(113, 185, 255, 0.25)');
+    } else if (progress > 0.28) {
+      // Middle chambers
+      chGrad.addColorStop(0, 'rgba(6, 12, 28, 0.96)');
+      chGrad.addColorStop(0.5, 'rgba(14, 34, 76, 0.85)');
+      chGrad.addColorStop(0.88, 'rgba(28, 70, 140, 0.35)');
+      chGrad.addColorStop(1, 'rgba(90, 160, 240, 0.22)');
+    } else {
+      // Early embryonic chambers with golden nacre warmth
+      chGrad.addColorStop(0, 'rgba(10, 16, 32, 0.95)');
+      chGrad.addColorStop(0.45, 'rgba(80, 55, 20, 0.65)');
+      chGrad.addColorStop(0.85, 'rgba(240, 201, 120, 0.35)');
+      chGrad.addColorStop(1, 'rgba(255, 225, 150, 0.28)');
+    }
+
+    ctx.fillStyle = chGrad;
+    ctx.fill();
+
+    // Subtle nacreous organic growth lines inside chamber
+    if (progress > 0.2) {
+      ctx.strokeStyle = progress > 0.6 ? 'rgba(113, 185, 255, 0.08)' : 'rgba(240, 201, 120, 0.07)';
+      ctx.lineWidth = 0.8;
+      for (let s = 1; s <= 2; s++) {
+        const tSub = t0 + (t1 - t0) * (s / 3);
+        const [subInX, subInY] = toCanvas(getRin(tSub), tSub);
+        const [subOutX, subOutY] = toCanvas(getRout(tSub), tSub);
+        const rSubMid = 0.52 * getRin(tSub) + 0.48 * getRout(tSub);
+        const [subCtrlX, subCtrlY] = toCanvas(rSubMid, tSub + 0.15);
+        ctx.beginPath();
+        ctx.moveTo(subOutX, subOutY);
+        ctx.quadraticCurveTo(subCtrlX, subCtrlY, subInX, subInY);
+        ctx.stroke();
       }
     }
-    // Ambient soft arm glow
-    ctx.strokeStyle = arm % 2 === 0 ? 'rgba(113, 185, 255, 0.28)' : 'rgba(240, 201, 120, 0.24)';
+    ctx.restore();
+  });
+
+  // Layer D: Glowing Septa Partition Walls (Chamber Ribs)
+  chambers.forEach((ch) => {
+    const { t1, progress } = ch;
+    const [outX, outY] = toCanvas(getRout(t1), t1);
+    const [inX, inY] = toCanvas(getRin(t1), t1);
+    const rMid = 0.52 * getRin(t1) + 0.48 * getRout(t1);
+    const [ctrlX, ctrlY] = toCanvas(rMid, t1 + 0.15);
+
+    ctx.save();
+    // Ambient soft blue septal glow
+    ctx.strokeStyle = 'rgba(113, 185, 255, 0.38)';
     ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(outX, outY);
+    ctx.quadraticCurveTo(ctrlX, ctrlY, inX, inY);
     ctx.stroke();
 
-    // Crisp inner spine
-    ctx.strokeStyle = arm % 2 === 0 ? 'rgba(192, 222, 255, 0.45)' : 'rgba(255, 235, 175, 0.45)';
-    ctx.lineWidth = 1.0;
+    // Crisp mother-of-pearl spine
+    ctx.strokeStyle = progress < 0.25 ? 'rgba(240, 201, 120, 0.88)' : 'rgba(220, 238, 255, 0.82)';
+    ctx.lineWidth = 1.1;
     ctx.stroke();
+    ctx.restore();
+  });
+
+  // Layer E: Continuous Siphuncle Buoyancy Canal & Pearl Nodes
+  // A golden thread puncturing each septum, characteristic of living Cephalopoda
+  ctx.save();
+  ctx.strokeStyle = 'rgba(240, 201, 120, 0.72)';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  let firstSiph = true;
+  for (let t = 1.5 * Math.PI; t <= thetaEnd - 0.15; t += 0.05) {
+    const rIn = getRin(t);
+    const rOut = getRout(t);
+    const rSiph = rIn + 0.28 * (rOut - rIn);
+    const [sx, sy] = toCanvas(rSiph, t);
+    if (firstSiph) {
+      ctx.moveTo(sx, sy);
+      firstSiph = false;
+    } else {
+      ctx.lineTo(sx, sy);
+    }
   }
+  ctx.stroke();
+
+  // Siphuncular luminous pearl beads at each septum intersection
+  chambers.forEach((ch) => {
+    const { t1, progress } = ch;
+    const rIn = getRin(t1);
+    const rOut = getRout(t1);
+    const rSiph = rIn + 0.28 * (rOut - rIn);
+    const [bx, by] = toCanvas(rSiph, t1);
+
+    const beadR = 1.6 + progress * 1.5;
+    const beadGrad = ctx.createRadialGradient(bx - 0.5, by - 0.5, 0.2, bx, by, beadR);
+    beadGrad.addColorStop(0, '#ffffff');
+    beadGrad.addColorStop(0.4, '#f0c978');
+    beadGrad.addColorStop(1, 'rgba(113, 185, 255, 0.6)');
+    ctx.fillStyle = beadGrad;
+    ctx.beginPath();
+    ctx.arc(bx, by, beadR, 0, Math.PI * 2);
+    ctx.fill();
+  });
   ctx.restore();
 
-  // Layer C: Master Vogel Phyllotaxis Sunflower Seed Florets
-  // Perfectly models nature's golden floret packing: r = c * sqrt(n), theta = n * 137.50776°
-  const floretCount = 580;
-  const cSpread = (discRadius - 16) / Math.sqrt(floretCount);
+  // Layer F: Solid Shell Outer Mantle & Aperture Lip
+  ctx.save();
+  // Ambient outer aura
+  ctx.strokeStyle = 'rgba(113, 185, 255, 0.32)';
+  ctx.lineWidth = 4.2;
+  ctx.beginPath();
+  for (let t = 0.4 * Math.PI; t <= thetaEnd; t += 0.04) {
+    const [px, py] = toCanvas(getRout(t), t);
+    if (t === 0.4 * Math.PI) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // Golden nacre core mantle line
+  ctx.strokeStyle = 'rgba(240, 201, 120, 0.9)';
+  ctx.lineWidth = 2.0;
+  ctx.stroke();
+
+  // Crisp pearlescent highlight
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+  ctx.lineWidth = 0.9;
+  ctx.stroke();
+
+  // Aperture living lip (grand opening)
+  const [apOutX, apOutY] = toCanvas(getRout(thetaEnd), thetaEnd);
+  const [apInX, apInY] = toCanvas(getRin(thetaEnd), thetaEnd);
+  const apMidR = 0.5 * (getRin(thetaEnd) + getRout(thetaEnd));
+  const [apCtrlX, apCtrlY] = toCanvas(apMidR, thetaEnd + 0.12);
+
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.moveTo(apOutX, apOutY);
+  ctx.quadraticCurveTo(apCtrlX, apCtrlY, apInX, apInY);
+  ctx.stroke();
+  ctx.restore();
+
+  // Layer G: Embryonic Protoconch — Vogel Sunflower Seed Phyllotaxis Core
+  // Unites botanical and marine Fibonacci expressions in nature
+  const floretCount = 82;
+  const maxFloretRadius = 26;
+  const cFloret = maxFloretRadius / Math.sqrt(floretCount);
 
   for (let n = 1; n <= floretCount; n++) {
-    const theta = n * goldenAngleRad;
-    const r = cSpread * Math.sqrt(n);
-    const fx = discCenterX + Math.cos(theta) * r;
-    const fy = discCenterY + Math.sin(theta) * r;
+    const floretAngle = n * goldenAngleRad;
+    const floretDist = cFloret * Math.sqrt(n);
+    const [fx, fy] = [
+      originX + floretDist * Math.cos(floretAngle),
+      originY + floretDist * Math.sin(floretAngle),
+    ];
 
-    // Relative progression from center floret (0) to outer edge (1)
     const norm = n / floretCount;
+    const fRadius = 1.1 + norm * 2.1;
 
-    // Organic floret radius: small in center, gracefully blooming outwards
-    const floretRadius = 1.3 + Math.sqrt(norm) * 3.0;
-
-    // Color gradient across the golden bloom:
-    // Core: brilliant gold (#ffffff -> #f0c978)
-    // Mid: deep sapphire azure to cyan (#71b9ff -> #38bdf8)
-    // Rim: iridescent indigo crystal with golden dust
-    let floretColor: string;
-    let floretCore: string;
-
-    if (norm < 0.22) {
-      // Golden sunseed heart
-      floretColor = '#f0c978';
-      floretCore = '#ffffff';
-    } else if (norm < 0.6) {
-      // Transition to celestial electric blue
-      floretColor = '#71b9ff';
-      floretCore = '#cbe4ff';
-    } else if (norm < 0.85) {
-      // Deep cosmic sapphire
-      floretColor = '#4a90e2';
-      floretCore = '#92c2fe';
-    } else {
-      // Golden corona rim florets
-      floretColor = n % 2 === 0 ? '#e2b356' : '#71b9ff';
-      floretCore = '#ffffff';
+    let fColor = '#f0c978';
+    let fCore = '#ffffff';
+    if (norm > 0.6) {
+      fColor = '#71b9ff';
+      fCore = '#cbe4ff';
+    } else if (norm > 0.3) {
+      fColor = '#ffd98c';
+      fCore = '#ffffff';
     }
 
     ctx.save();
     ctx.beginPath();
-    ctx.arc(fx, fy, floretRadius, 0, Math.PI * 2);
+    ctx.arc(fx, fy, fRadius, 0, Math.PI * 2);
 
     const fGrad = ctx.createRadialGradient(
-      fx - floretRadius * 0.3,
-      fy - floretRadius * 0.3,
-      floretRadius * 0.1,
+      fx - fRadius * 0.3,
+      fy - fRadius * 0.3,
+      fRadius * 0.1,
       fx,
       fy,
-      floretRadius
+      fRadius
     );
-    fGrad.addColorStop(0, floretCore);
-    fGrad.addColorStop(0.5, floretColor);
-    fGrad.addColorStop(1, hexToRgba(floretColor, 0.7));
+    fGrad.addColorStop(0, fCore);
+    fGrad.addColorStop(0.5, fColor);
+    fGrad.addColorStop(1, hexToRgba(fColor, 0.7));
     ctx.fillStyle = fGrad;
     ctx.fill();
     ctx.restore();
   }
 
-  // Layer D: Luminous central singularity & Golden Ratio Emblem (Phi Φ)
-  const coreGlow = ctx.createRadialGradient(discCenterX, discCenterY, 0, discCenterX, discCenterY, 24);
-  coreGlow.addColorStop(0, '#ffffff');
-  coreGlow.addColorStop(0.3, 'rgba(240, 201, 120, 0.95)');
-  coreGlow.addColorStop(0.65, 'rgba(113, 185, 255, 0.45)');
-  coreGlow.addColorStop(1, 'rgba(7, 12, 24, 0)');
-  ctx.fillStyle = coreGlow;
+  // Luminous central embryonic singularity
+  const embryoGlow = ctx.createRadialGradient(originX, originY, 0, originX, originY, 20);
+  embryoGlow.addColorStop(0, '#ffffff');
+  embryoGlow.addColorStop(0.35, 'rgba(240, 201, 120, 0.9)');
+  embryoGlow.addColorStop(0.7, 'rgba(113, 185, 255, 0.35)');
+  embryoGlow.addColorStop(1, 'rgba(7, 12, 24, 0)');
+  ctx.fillStyle = embryoGlow;
   ctx.beginPath();
-  ctx.arc(discCenterX, discCenterY, 24, 0, Math.PI * 2);
+  ctx.arc(originX, originY, 20, 0, Math.PI * 2);
   ctx.fill();
 
-  // Delicate center Golden Seed node
   ctx.fillStyle = '#ffffff';
-  ctx.shadowColor = 'rgba(255, 255, 255, 0.9)';
+  ctx.shadowColor = 'rgba(255, 255, 255, 0.95)';
   ctx.shadowBlur = 8;
   ctx.beginPath();
-  ctx.arc(discCenterX, discCenterY, 3.8, 0, Math.PI * 2);
+  ctx.arc(originX, originY, 3.2, 0, Math.PI * 2);
   ctx.fill();
   ctx.shadowBlur = 0;
 

@@ -159,7 +159,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                 Share Fibonacci Result
               </h2>
               <p className="text-[11px] font-mono text-[#7d8fa6]">
-                Golden Ratio Phyllotaxis Cosmos & verified homepage link
+                Organic Golden Nautilus & Phyllotaxis • verified homepage link
               </p>
             </div>
           </div>
@@ -189,7 +189,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                   />
                 ) : (
                   <div className="w-[260px] h-[325px] flex items-center justify-center text-xs font-mono text-[#7d8fa6]">
-                    Rendering Spiral Card...
+                    Rendering Share Card...
                   </div>
                 )}
                 <div className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-md bg-black/70 backdrop-blur-sm border border-white/10 text-[10px] font-mono text-[#f0c978]">
