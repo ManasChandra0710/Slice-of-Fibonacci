@@ -20,6 +20,11 @@ export default function App() {
   const [isGeneratingShare, setIsGeneratingShare] = useState(false);
   const resultRef = useRef<HTMLElement>(null);
 
+  // Keep background music playing by default when user enters the website
+  useEffect(() => {
+    soundEngine.playInterstellar().catch(() => {});
+  }, []);
+
   // Subscribe to background music state
   useEffect(() => {
     const unsub = soundEngine.subscribe((state) => {

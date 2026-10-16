@@ -116,27 +116,43 @@ class InterstellarAudioEngine {
   }
 
   /**
-   * One-time user interaction listener if browser autoplay policy blocked initial start
+   * Automatic playback unlock listener on user entrance:
+   * Keeps listening across interaction & entrance events until playback successfully starts, then cleanly detaches.
    */
   private setupUnlockOnFirstInteraction(): void {
     if (this.unlockListenerAttached || typeof window === 'undefined') return;
     this.unlockListenerAttached = true;
 
-    const unlockHandler = () => {
-      // Immediately detach all listeners so it triggers strictly ONCE
-      const events = ['click', 'keydown', 'touchstart', 'pointerdown'];
-      events.forEach((ev) => window.removeEventListener(ev, unlockHandler));
-      this.unlockListenerAttached = false;
+    const events = [
+      'pointerdown',
+      'touchstart',
+      'mousedown',
+      'keydown',
+      'click',
+      'pointermove',
+      'mousemove',
+      'wheel',
+      'scroll',
+      'focus',
+    ];
 
-      // Start playback if user has not explicitly chosen to pause
-      if (!this.userPaused && !this.isPlaying && !document.hidden) {
-        this.playWithFade().catch(() => {});
-      }
+    const unlockHandler = () => {
+      if (this.userPaused || document.hidden) return;
+
+      this.playWithFade()
+        .then(() => {
+          if (this.isPlaying) {
+            events.forEach((ev) => window.removeEventListener(ev, unlockHandler));
+            this.unlockListenerAttached = false;
+          }
+        })
+        .catch(() => {
+          // Still waiting for user activation gesture if pointermove was not enough
+        });
     };
 
-    const events = ['click', 'keydown', 'touchstart', 'pointerdown'];
     events.forEach((ev) => {
-      window.addEventListener(ev, unlockHandler, { once: true, passive: true });
+      window.addEventListener(ev, unlockHandler, { passive: true });
     });
   }
 
@@ -185,7 +201,7 @@ class InterstellarAudioEngine {
   }
 
   /**
-   * Starts background playback with a gentle 1.2s fade-in
+   * Starts background playback with a gentle fade-in
    */
   public async playWithFade(): Promise<void> {
     if (this.userPaused) return;
@@ -195,24 +211,25 @@ class InterstellarAudioEngine {
     try {
       this.cancelFade();
 
-      // Start from near-zero volume for a smooth cinematic entrance
-      this.audio.volume = 0.02;
-
-      const playPromise = this.audio.play();
-      if (playPromise !== undefined) {
-        await playPromise;
+      if (this.audio.paused) {
+        this.audio.volume = 0.05;
+        const playPromise = this.audio.play();
+        if (playPromise !== undefined) {
+          await playPromise;
+        }
       }
 
       this.isPlaying = true;
       this.notify();
 
-      // Gentle fade-in over 1200ms up to target volume
-      this.fadeVolume(this.audio.volume, this.targetVolume, 1200);
-    } catch {
+      // Gentle fade-in over 1000ms up to target volume
+      this.fadeVolume(this.audio.volume, this.targetVolume, 1000);
+    } catch (err) {
       // Browser autoplay policy prevented playback; will unlock on first user interaction
       this.isPlaying = false;
       this.notify();
       this.setupUnlockOnFirstInteraction();
+      throw err;
     }
   }
 
