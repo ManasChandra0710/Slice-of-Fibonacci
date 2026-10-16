@@ -9,7 +9,37 @@ import {
   ORIGINAL_HOMEPAGE_URL,
   SHARE_CAPTION,
 } from './utils/shareCard';
-import { Volume2, VolumeX, Sparkles, Send, Music, Share2, Check } from 'lucide-react';
+import { Volume2, VolumeX, Sparkles, Send, Music, Share2, Check, X, RotateCcw } from 'lucide-react';
+
+/**
+ * Extracts searched number from current URL path (/13, /144, /1000).
+ * Gracefully ignores non-digit paths (e.g. /about, /) and cleans up malformed input.
+ */
+function extractNumberFromPathname(pathname: string): string {
+  if (!pathname) return '';
+  const cleanPath = pathname.split('?')[0].split('#')[0].replace(/\/+$/, '');
+  const segments = cleanPath.split('/').filter(Boolean);
+  if (segments.length === 0) return '';
+  const lastSegment = segments[segments.length - 1];
+  if (/^\d+$/.test(lastSegment)) {
+    return lastSegment;
+  }
+  return '';
+}
+
+function getInitialSearchNumber(): string {
+  if (typeof window === 'undefined') return '';
+  const pathNum = extractNumberFromPathname(window.location.pathname);
+  if (pathNum) return pathNum;
+
+  // Fallback support for query parameter (?q=13 or ?number=13)
+  const params = new URLSearchParams(window.location.search);
+  const q = params.get('q') || params.get('number');
+  if (q && /^\d+$/.test(q)) {
+    return q;
+  }
+  return '';
+}
 
 export default function App() {
   const [inputValue, setInputValue] = useState('');
@@ -25,9 +55,9 @@ export default function App() {
   const [isGeneratingShare, setIsGeneratingShare] = useState(false);
   const resultRef = useRef<HTMLElement>(null);
 
-  // Keep background music playing by default when user enters the website
+  // Restart background music from 00:00 on page refresh/initial load
   useEffect(() => {
-    soundEngine.playInterstellar().catch(() => {});
+    soundEngine.playInterstellar(true).catch(() => {});
   }, []);
 
   // Subscribe to background music state
@@ -39,18 +69,33 @@ export default function App() {
     return unsub;
   }, []);
 
-  // Search logic
-  const handleSearch = async (val: string, syncUrl: boolean = true) => {
-    const clean = val.trim();
-    if (!clean) return;
+  // Clear search and cleanly return URL to root '/'
+  const handleClear = () => {
+    setInputValue('');
+    setPreviewQuery('');
+    setMatchResult(null);
+    if (typeof window !== 'undefined' && window.location.pathname !== '/') {
+      window.history.pushState({}, '', '/');
+    }
+  };
+
+  // Search logic with History API integration: updates browser URL to /{number}
+  const handleSearch = async (val: string, pushToHistory: boolean = true) => {
+    const clean = val.replace(/[^0-9]/g, '').trim();
+    if (!clean) {
+      handleClear();
+      return;
+    }
 
     setIsSearching(true);
     setPreviewQuery(clean);
 
-    if (syncUrl && typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      url.searchParams.set('q', clean);
-      window.history.replaceState({}, '', url.toString());
+    // Update browser URL using History API to /{number} without full page reload
+    if (pushToHistory && typeof window !== 'undefined') {
+      const targetPath = `/${clean}`;
+      if (window.location.pathname !== targetPath) {
+        window.history.pushState({ number: clean }, '', targetPath);
+      }
     }
 
     try {
@@ -69,48 +114,52 @@ export default function App() {
     }
   };
 
-  // Load shared query from URL parameter if present on initial load
+  // Load searched number directly from URL path (/13, /144, /1000) on page load or refresh
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search);
-    const q = params.get('q');
-    if (q) {
-      const clean = q.replace(/[^0-9]/g, '').slice(0, 6);
-      if (clean) {
-        setInputValue(clean);
-        handleSearch(clean, false);
+
+    const initialNum = getInitialSearchNumber();
+    if (initialNum) {
+      setInputValue(initialNum);
+      handleSearch(initialNum, false);
+
+      // Clean up any query parameters like ?number=13 to pure /{number}
+      if (window.location.search && window.history.replaceState) {
+        window.history.replaceState({ number: initialNum }, '', `/${initialNum}`);
       }
     }
   }, []);
 
-  // Browser navigation history support (Back/Forward)
+  // Browser navigation history support (Back / Forward navigation)
   useEffect(() => {
     const handlePopState = () => {
-      const params = new URLSearchParams(window.location.search);
-      const q = params.get('q');
-      if (q) {
-        const clean = q.replace(/[^0-9]/g, '').slice(0, 6);
-        if (clean && clean !== inputValue) {
-          setInputValue(clean);
-          handleSearch(clean, false);
-        }
+      const num = extractNumberFromPathname(window.location.pathname);
+      if (num) {
+        setInputValue(num);
+        handleSearch(num, false);
+      } else {
+        // Navigated back to root '/' or invalid path -> restore clean initial state
+        setInputValue('');
+        setPreviewQuery('');
+        setMatchResult(null);
       }
     };
+
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [inputValue]);
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     handleSearch(inputValue, true);
   };
 
-  // Generate shareable URL for the current visualization
+  // Generate clean shareable URL for the current searched number
   const getShareUrl = (query: string) => {
-    if (typeof window === 'undefined') return '';
-    const url = new URL(window.location.origin + window.location.pathname);
-    url.searchParams.set('q', query);
-    return url.toString();
+    if (typeof window === 'undefined') {
+      return `${ORIGINAL_HOMEPAGE_URL}${query}`;
+    }
+    return `${window.location.origin}/${query}`;
   };
 
   const handleShare = async () => {
@@ -174,8 +223,13 @@ export default function App() {
     <div className="max-w-[1100px] mx-auto px-4 sm:px-8 pt-6 sm:pt-8 pb-24 text-[#f2f4f8] min-h-screen flex flex-col justify-between">
       {/* Floating Glass Navigation Header */}
       <header className="glass-panel rounded-2xl px-5 py-3.5 flex justify-between items-center text-xs tracking-wide">
-        <div className="flex items-center gap-3 font-semibold text-sm sm:text-base tracking-tight">
-          <span className="relative flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-[#121c2e] via-[#0b1320] to-[#1c1810] border border-[#71b9ff]/40 shadow-[0_0_18px_rgba(113,185,255,0.28)] hover:border-[#f0c978]/60 hover:shadow-[0_0_24px_rgba(240,201,120,0.4)] transition-all duration-300 group overflow-hidden shrink-0">
+        <button
+          type="button"
+          onClick={handleClear}
+          className="flex items-center gap-3 font-semibold text-sm sm:text-base tracking-tight cursor-pointer text-left focus:outline-none group"
+          title="Return to Slice of Fibonacci Homepage (/)"
+        >
+          <span className="relative flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-[#121c2e] via-[#0b1320] to-[#1c1810] border border-[#71b9ff]/40 shadow-[0_0_18px_rgba(113,185,255,0.28)] group-hover:border-[#f0c978]/60 group-hover:shadow-[0_0_24px_rgba(240,201,120,0.4)] transition-all duration-300 overflow-hidden shrink-0">
             <span className="absolute inset-0 bg-gradient-to-tr from-[#71b9ff]/20 via-transparent to-[#f0c978]/25 opacity-70 group-hover:opacity-100 transition duration-300 pointer-events-none" />
             <svg
               viewBox="0 0 32 32"
@@ -214,10 +268,10 @@ export default function App() {
               <circle cx="27" cy="18" r="1.3" fill="#f0c978" />
             </svg>
           </span>
-          <span className="text-white font-medium tracking-tight text-[15px] sm:text-[16px]">
+          <span className="text-white font-medium tracking-tight text-[15px] sm:text-[16px] group-hover:text-[#9ecbff] transition">
             Slice of Fibonacci
           </span>
-        </div>
+        </button>
 
         <div className="flex items-center gap-2 sm:gap-3">
 
@@ -293,7 +347,7 @@ export default function App() {
                   type="text"
                   inputMode="numeric"
                   autoComplete="off"
-                  maxLength={6}
+                  maxLength={12}
                   value={inputValue}
                   onChange={(e) => {
                     const val = e.target.value.replace(/[^0-9]/g, '');
@@ -301,10 +355,23 @@ export default function App() {
                     if (val) setPreviewQuery(val);
                   }}
                   aria-label="Number sequence to search"
-                  placeholder="Type any number (e.g. 0412)..."
+                  placeholder="Type any number (e.g. 13, 144, 1000)..."
                   className="w-full bg-transparent text-[#f2f4f8] border-0 outline-none px-4 py-2.5 text-base sm:text-[18px] tracking-[0.16em] font-mono placeholder:text-[#556173] placeholder:tracking-normal font-semibold"
                   required
                 />
+
+                {/* Clear search input button */}
+                {inputValue && (
+                  <button
+                    type="button"
+                    onClick={handleClear}
+                    className="p-1 rounded-md text-[#6e7d94] hover:text-white hover:bg-white/[0.08] transition mr-1 cursor-pointer"
+                    title="Clear search and return to homepage (/)"
+                    aria-label="Clear search input"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
 
                 {/* Live typing glass orb preview inside input */}
                 {liveDigits.length > 0 && (
@@ -538,6 +605,16 @@ export default function App() {
                     </>
                   )}
                 </button>
+
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  className="px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/10 hover:border-white/20 text-[#8e9cb0] hover:text-white text-xs font-mono transition cursor-pointer flex items-center gap-1.5 active:scale-95"
+                  title="Clear search and return to landing page (/)"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Clear Search</span>
+                </button>
               </div>
 
               <span className="text-[11px] text-[#657386] font-mono">
@@ -588,6 +665,7 @@ export default function App() {
           onClose={() => setIsShareModalOpen(false)}
           matchResult={matchResult}
           shareCard={shareCard}
+          searchUrl={getShareUrl(matchResult.query)}
         />
       )}
     </div>

@@ -49,11 +49,24 @@ class InterstellarAudioEngine {
     if (this.hasInitialized || typeof window === 'undefined') return;
     this.hasInitialized = true;
 
+    // Purge any stored audio positions to ensure page refresh strictly restarts from 00:00
+    try {
+      window.sessionStorage?.removeItem('interstellar_audio_pos');
+      window.localStorage?.removeItem('interstellar_audio_pos');
+    } catch {}
+
     this.createAudioElement();
     this.setupVisibilityListener();
 
+    // On page entrance or page refresh, strictly ensure playback begins at 00:00
+    if (this.audio) {
+      try {
+        this.audio.currentTime = 0;
+      } catch {}
+    }
+
     // Attempt automatic playback upon entering the website
-    this.playWithFade().catch(() => {
+    this.playWithFade(true).catch(() => {
       // Autoplay blocked until first interaction
       this.setupUnlockOnFirstInteraction();
     });
@@ -62,11 +75,24 @@ class InterstellarAudioEngine {
   private createAudioElement(): void {
     if (this.audio || typeof window === 'undefined') return;
 
+    // Clean up any stale window audio to prevent ghost instances or overlapping audio
+    const win = window as unknown as { __INTERSTELLAR_AUDIO__?: HTMLAudioElement };
+    if (win.__INTERSTELLAR_AUDIO__) {
+      try {
+        win.__INTERSTELLAR_AUDIO__.pause();
+        win.__INTERSTELLAR_AUDIO__.src = '';
+      } catch {}
+      win.__INTERSTELLAR_AUDIO__ = undefined;
+    }
+
     try {
       this.audio = new Audio('/audio/interstellar.mp3');
       this.audio.loop = true;
       this.audio.preload = 'auto';
       this.audio.volume = this.targetVolume;
+      this.audio.currentTime = 0; // Strictly start at beginning (00:00)
+
+      win.__INTERSTELLAR_AUDIO__ = this.audio;
 
       this.audio.addEventListener('play', () => {
         this.isPlaying = true;
@@ -202,14 +228,21 @@ class InterstellarAudioEngine {
 
   /**
    * Starts background playback with a gentle fade-in
+   * @param resetToStart If true, resets playback strictly to 00:00 (used on page refresh / entrance)
    */
-  public async playWithFade(): Promise<void> {
+  public async playWithFade(resetToStart: boolean = false): Promise<void> {
     if (this.userPaused) return;
     this.createAudioElement();
     if (!this.audio) return;
 
     try {
       this.cancelFade();
+
+      if (resetToStart) {
+        try {
+          this.audio.currentTime = 0;
+        } catch {}
+      }
 
       if (this.audio.paused) {
         this.audio.volume = 0.05;
@@ -310,8 +343,8 @@ class InterstellarAudioEngine {
   }
 
   // --- Compatibility helpers for existing codebase with zero sound effects ---
-  public playInterstellar(): Promise<void> {
-    return this.playWithFade();
+  public playInterstellar(resetToStart: boolean = false): Promise<void> {
+    return this.playWithFade(resetToStart);
   }
 
   public pauseInterstellar(): void {

@@ -2,5 +2,7 @@
   "name": "Slice of Fibonacci",
   "description": "A futuristic 3D interactive explorer for the Fibonacci sequence and Golden Ratio with real-time camera fly-through and number search.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

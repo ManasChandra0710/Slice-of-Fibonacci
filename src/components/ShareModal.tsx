@@ -12,6 +12,7 @@ interface ShareModalProps {
   onClose: () => void;
   matchResult: FibonacciMatchResult;
   shareCard: GeneratedShareCard | null;
+  searchUrl?: string;
 }
 
 export const ShareModal: React.FC<ShareModalProps> = ({
@@ -19,11 +20,15 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   onClose,
   matchResult,
   shareCard,
+  searchUrl,
 }) => {
   const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedSearchUrl, setCopiedSearchUrl] = useState(false);
   const [copiedCaption, setCopiedCaption] = useState(false);
   const [copiedImage, setCopiedImage] = useState(false);
   const [isSharingNative, setIsSharingNative] = useState(false);
+
+  const directUrl = searchUrl || `${ORIGINAL_HOMEPAGE_URL}${matchResult.query}`;
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -45,6 +50,16 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+  };
+
+  const handleCopySearchUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(directUrl);
+      setCopiedSearchUrl(true);
+      setTimeout(() => setCopiedSearchUrl(false), 2500);
+    } catch {
+      // Fallback
+    }
   };
 
   const handleCopyLink = async () => {
@@ -227,6 +242,12 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                     #{matchResult.streamPos.toLocaleString('en-US')}
                   </span>
                 </div>
+                <div className="flex justify-between items-center text-[#99a9bf] pt-1 border-t border-white/[0.04]">
+                  <span>Shareable URL</span>
+                  <span className="text-[#71b9ff] font-bold">
+                    /{matchResult.query}
+                  </span>
+                </div>
               </div>
 
               {/* Action Buttons */}
@@ -240,6 +261,27 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                 >
                   <Download className="w-4 h-4" />
                   <span>Download Share Image (PNG)</span>
+                </button>
+
+                {/* Copy Direct Search URL (/{number}) */}
+                <button
+                  type="button"
+                  onClick={handleCopySearchUrl}
+                  className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#71b9ff]/20 to-[#9ecbff]/20 hover:from-[#71b9ff]/30 hover:to-[#9ecbff]/30 active:scale-[0.98] border border-[#71b9ff]/45 text-[#71b9ff] hover:text-white font-mono text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-[0_0_15px_rgba(113,185,255,0.12)]"
+                >
+                  {copiedSearchUrl ? (
+                    <>
+                      <Check className="w-4 h-4 text-[#71b9ff]" />
+                      <span className="text-[#71b9ff] font-semibold">
+                        Direct URL Copied (/{matchResult.query}) ✓
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Link2 className="w-4 h-4 text-[#71b9ff]" />
+                      <span>Copy Direct Search URL (/{matchResult.query})</span>
+                    </>
+                  )}
                 </button>
 
                 {/* Copy Website Link */}
