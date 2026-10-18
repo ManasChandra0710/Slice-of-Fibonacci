@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FibonacciCanvas } from './components/FibonacciCanvas';
-import { searchFibonacciTerm, FibonacciMatchResult, DIGIT_RULES } from './math/fibonacci';
+import {
+  searchFibonacciTerm,
+  cancelCurrentSearch,
+  FibonacciMatchResult,
+  DIGIT_RULES,
+} from './math/fibonacci';
 import { soundEngine } from './audio/sound';
 import { ShareModal } from './components/ShareModal';
 import {
@@ -8,6 +13,7 @@ import {
   GeneratedShareCard,
   ORIGINAL_HOMEPAGE_URL,
   SHARE_CAPTION,
+  getOrdinalSuffix,
 } from './utils/shareCard';
 import { Volume2, VolumeX, Sparkles, Send, Music, Share2, Check, X, RotateCcw } from 'lucide-react';
 
@@ -21,7 +27,7 @@ function extractNumberFromPathname(pathname: string): string {
   const segments = cleanPath.split('/').filter(Boolean);
   if (segments.length === 0) return '';
   const lastSegment = segments[segments.length - 1];
-  if (/^\d+$/.test(lastSegment)) {
+  if (/^\d{1,8}$/.test(lastSegment)) {
     return lastSegment;
   }
   return '';
@@ -35,7 +41,7 @@ function getInitialSearchNumber(): string {
   // Fallback support for query parameter (?q=13 or ?number=13)
   const params = new URLSearchParams(window.location.search);
   const q = params.get('q') || params.get('number');
-  if (q && /^\d+$/.test(q)) {
+  if (q && /^\d{1,8}$/.test(q)) {
     return q;
   }
   return '';
@@ -45,6 +51,8 @@ export default function App() {
   const [inputValue, setInputValue] = useState('');
   const [previewQuery, setPreviewQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  const [searchProgress, setSearchProgress] = useState<number | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [matchResult, setMatchResult] = useState<FibonacciMatchResult | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(soundEngine.getIsPlaying());
@@ -69,9 +77,12 @@ export default function App() {
 
   // Clear search and cleanly return URL to root '/'
   const handleClear = () => {
+    cancelCurrentSearch();
     setInputValue('');
     setPreviewQuery('');
     setMatchResult(null);
+    setSearchError(null);
+    setSearchProgress(null);
     if (typeof document !== 'undefined') {
       document.title = 'Slice of Fibonacci';
     }
@@ -82,13 +93,15 @@ export default function App() {
 
   // Search logic with History API integration: updates browser URL to /{number}
   const handleSearch = async (val: string, pushToHistory: boolean = true) => {
-    const clean = val.replace(/[^0-9]/g, '').trim();
+    const clean = val.replace(/[^0-9]/g, '').slice(0, 8);
     if (!clean) {
       handleClear();
       return;
     }
 
     setIsSearching(true);
+    setSearchError(null);
+    setSearchProgress(0);
     setPreviewQuery(clean);
 
     // Update browser URL using History API to /{number} without full page reload
@@ -105,16 +118,25 @@ export default function App() {
     }
 
     try {
-      const res = await searchFibonacciTerm(clean);
+      const res = await searchFibonacciTerm(clean, (checkedCount) => {
+        setSearchProgress(checkedCount);
+      });
       setMatchResult(res);
+      setSearchError(null);
+      setSearchProgress(null);
 
       setTimeout(() => {
         if (resultRef.current && window.innerWidth < 768) {
           resultRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
       }, 300);
-    } catch {
-      // Handled cleanly without cluttering UI
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Search could not be completed.';
+      if (message !== 'SEARCH_CANCELLED') {
+        setSearchError(message);
+        setMatchResult(null);
+        setSearchProgress(null);
+      }
     } finally {
       setIsSearching(false);
     }

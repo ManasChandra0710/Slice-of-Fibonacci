@@ -1,8 +1,18 @@
 /**
  * Fibonacci Search & 3D Spatial Geometry Engine
- * All orbs share a uniform sleek size, with distinct colors for digits 0-9.
- * Arc-length parameterized spacing ensures generous breathing room between every orb.
+ * Upgraded to accurately support searching for any digit sequence from 1 to 8 digits long.
+ * Preserves leading zeros as strings and searches ascending Fibonacci terms starting from F(0) = 0 and F(1) = 1.
  */
+
+import {
+  FibonacciMatchResult,
+  FibonacciSearchEngine,
+  buildStreamSnippet,
+  MAX_SEARCH_TERMS,
+} from './fibonacciSearch';
+
+export type { FibonacciMatchResult };
+export { FibonacciSearchEngine, MAX_SEARCH_TERMS, buildStreamSnippet };
 
 export interface DigitRule {
   digit: number;
@@ -24,31 +34,15 @@ export const DIGIT_RULES: DigitRule[] = [
   { digit: 9, color: '#6dc3b6', hex: 0x6dc3b6, name: 'Seafoam Teal' },
 ];
 
-export interface FibonacciMatchResult {
-  query: string;
-  n: number;
-  pos: number; // 1-based position inside individual term F(n)
-  streamPos: number; // 1-based exact position in continuous stream 0112358...
-  streamSnippetBefore: string;
-  streamSnippetAfter: string;
-  term: string; // Complete decimal string of F(n)
-  termLength: number;
-  before: string;
-  match: string;
-  after: string;
-  trailStartIndex: number; // Index of the first node in the 3D spiral trail
-  trailDigits: number[]; // Array of single digits
-}
-
 export const PHI = 1.618033988749895;
 
 /**
- * Pre-generate the continuous digit stream of Fibonacci numbers:
+ * Pre-generate the continuous digit stream of Fibonacci numbers for 3D orbs background:
  * 0 1 1 2 3 5 8 13 21 34 55 89 144 ...
  */
-let cachedStream = '';
+let cachedInitialStream = '';
 export function getFibonacciDigitStream(minDigits: number = 2000): string {
-  if (cachedStream.length >= minDigits) return cachedStream;
+  if (cachedInitialStream.length >= minDigits) return cachedInitialStream;
 
   let a = 0n;
   let b = 1n;
@@ -61,8 +55,8 @@ export function getFibonacciDigitStream(minDigits: number = 2000): string {
     b = next;
   }
 
-  cachedStream = s;
-  return cachedStream;
+  cachedInitialStream = s;
+  return cachedInitialStream;
 }
 
 /**
@@ -74,7 +68,6 @@ export function getContinuousStreamSnippet(
   radius: number = 8
 ): { before: string; after: string } {
   const needed = streamPos1Based + queryLength + radius + 30;
-  // Limit generation for performance if streamPos is within safe bounds
   const stream = getFibonacciDigitStream(Math.min(needed, 50000));
   const matchStart0 = streamPos1Based - 1;
   const matchEnd0 = matchStart0 + queryLength;
@@ -96,88 +89,110 @@ export function getContinuousStreamSnippet(
   };
 }
 
+// Global search engine worker and fallback state
+let workerInstance: Worker | null = null;
+let fallbackEngine: FibonacciSearchEngine | null = null;
+let currentSearchId = 0;
+let workerFailed = false;
+
+function getWorker(): Worker | null {
+  if (workerFailed) return null;
+  if (typeof window === 'undefined' || typeof Worker === 'undefined') return null;
+
+  if (!workerInstance) {
+    try {
+      workerInstance = new Worker(new URL('./search.worker.ts', import.meta.url), {
+        type: 'module',
+      });
+    } catch {
+      workerFailed = true;
+      return null;
+    }
+  }
+  return workerInstance;
+}
+
+export function cancelCurrentSearch() {
+  currentSearchId++;
+  const worker = getWorker();
+  if (worker) {
+    worker.postMessage({ type: 'reset' });
+  }
+}
+
 /**
- * Searches sequential Fibonacci terms starting from F(0) for the first term
- * containing the query string, running asynchronously in non-blocking batches.
+ * Searches sequential Fibonacci terms in ascending order starting with F(0) = 0 and F(1) = 1
+ * for the first Fibonacci term containing the entered 1–8 digit decimal sequence.
+ *
+ * Runs asynchronously via dedicated Web Worker (with non-blocking main-thread fallback)
+ * so large computations never freeze the browser or 3D animations.
  */
 export function searchFibonacciTerm(
   query: string,
   onProgress?: (checkedCount: number) => void
 ): Promise<FibonacciMatchResult> {
-  return new Promise((resolve, reject) => {
-    const clean = query.trim();
-    if (!clean) {
-      reject(new Error('Please enter a number to search.'));
-      return;
-    }
+  const clean = query.trim();
+  if (!clean) {
+    return Promise.reject(new Error('Please enter a sequence containing 1 to 8 decimal digits.'));
+  }
+  if (!/^\d{1,8}$/.test(clean)) {
+    return Promise.reject(new Error('Sequence must contain only decimal digits (1–8 digits long).'));
+  }
 
-    let a = 0n;
-    let b = 1n;
-    let n = 0;
-    let totalDigitsBefore = 0;
-    const maxTerms = 8000;
-    const batchSize = 120;
+  const searchId = ++currentSearchId;
+  const worker = getWorker();
 
-    function processBatch() {
-      const stop = Math.min(n + batchSize, maxTerms);
-      while (n < stop) {
-        const str = a.toString();
-        const pos = str.indexOf(clean);
-        if (pos !== -1) {
-          const matchStart = pos;
-          const matchEnd = pos + clean.length;
+  if (worker) {
+    return new Promise((resolve, reject) => {
+      const handleMessage = (e: MessageEvent) => {
+        const { type, id, result, message, checkedCount } = e.data;
+        if (id !== searchId) return;
 
-          const before = str.slice(0, matchStart);
-          const match = str.slice(matchStart, matchEnd);
-          const after = str.slice(matchEnd);
-
-          // 1-based index in the continuous stream: 01123581321345589144...
-          const streamPos = totalDigitsBefore + pos + 1;
-          const digits = clean.split('').map((c) => parseInt(c, 10));
-          const snippet = getContinuousStreamSnippet(streamPos, clean.length);
-
-          resolve({
-            query: clean,
-            n,
-            pos: pos + 1, // 1-based index in F(n)
-            streamPos,
-            streamSnippetBefore: snippet.before,
-            streamSnippetAfter: snippet.after,
-            term: str,
-            termLength: str.length,
-            before,
-            match,
-            after,
-            trailStartIndex: (streamPos - 1) % 650,
-            trailDigits: digits,
-          });
-          return;
+        if (type === 'progress') {
+          onProgress?.(checkedCount);
+        } else if (type === 'result') {
+          cleanup();
+          resolve(result);
+        } else if (type === 'error') {
+          cleanup();
+          reject(new Error(message));
         }
+      };
 
-        totalDigitsBefore += str.length;
-        const next = a + b;
-        a = b;
-        b = next;
-        n++;
-      }
+      const handleError = () => {
+        cleanup();
+        workerFailed = true;
+        if (!fallbackEngine) fallbackEngine = new FibonacciSearchEngine();
+        fallbackEngine
+          .search(clean, {
+            maxTerms: MAX_SEARCH_TERMS,
+            onProgress,
+            isCancelled: () => currentSearchId !== searchId,
+          })
+          .then(resolve)
+          .catch(reject);
+      };
 
-      if (n >= maxTerms) {
-        reject(
-          new Error(
-            `No match was found in the first ${maxTerms.toLocaleString()} Fibonacci terms. Try another number.`
-          )
-        );
-        return;
-      }
+      const cleanup = () => {
+        worker.removeEventListener('message', handleMessage);
+        worker.removeEventListener('error', handleError);
+      };
 
-      if (onProgress) {
-        onProgress(n);
-      }
+      worker.addEventListener('message', handleMessage);
+      worker.addEventListener('error', handleError);
+      worker.postMessage({ type: 'search', id: searchId, query: clean, maxTerms: MAX_SEARCH_TERMS });
+    });
+  }
 
-      setTimeout(processBatch, 0);
-    }
+  // Fallback to local non-blocking asynchronous generator if Worker is unavailable
+  if (!fallbackEngine) {
+    fallbackEngine = new FibonacciSearchEngine();
+  }
 
-    processBatch();
+  return fallbackEngine.search(clean, {
+    maxTerms: MAX_SEARCH_TERMS,
+    onProgress,
+    isCancelled: () => currentSearchId !== searchId,
   });
 }
 
@@ -192,7 +207,6 @@ export function generateSpiralPositions(count: number = 750): Float32Array {
 
   for (let i = 0; i < count; i++) {
     const progress = i / count;
-    // Logarithmic radius with smooth expansion
     const r = 2.4 * Math.exp(0.046 * theta);
     const y = (progress - 0.5) * 19;
 
@@ -200,7 +214,6 @@ export function generateSpiralPositions(count: number = 750): Float32Array {
     positions[i * 3 + 1] = y;
     positions[i * 3 + 2] = Math.sin(theta) * r;
 
-    // Arc length step calculation: ds = sqrt(r^2 + (dr/dtheta)^2 + (dy/dtheta)^2) * dtheta
     const dr = 0.046 * r;
     const dy = 19 / count;
     const speed = Math.sqrt(r * r + dr * dr + dy * dy) || 1;
@@ -440,7 +453,7 @@ export function analyzeSearchPatterns(result: FibonacciMatchResult): SequencePat
     });
   }
 
-  // 4. Zeckendorf representation of the query if it's a valid number
+  // 4. Zeckendorf representation of the query if it's a valid positive number
   if (!isNaN(numQuery) && numQuery > 0 && numQuery <= 500000) {
     const parts = getZeckendorfDecomposition(numQuery);
     if (parts.length > 0) {
@@ -450,7 +463,7 @@ export function analyzeSearchPatterns(result: FibonacciMatchResult): SequencePat
         title: `Zeckendorf Decomposition of "${result.query}"`,
         tag: `Unique Fibonacci Sum`,
         formula: `${result.query} = ${parts.join(' + ')}`,
-        summary: `Your searched number decomposes into ${parts.length} distinct non-consecutive Fibonacci numbers.`,
+        summary: `Your searched sequence decomposes into ${parts.length} distinct non-consecutive Fibonacci numbers.`,
         detail: `Zeckendorf's theorem guarantees that "${result.query}" has one and only one canonical representation as a sum of non-consecutive Fibonacci terms (${parts.join(', ')}). This forms the basis of Fibonacci base-φ numeral systems.`,
       });
     }
