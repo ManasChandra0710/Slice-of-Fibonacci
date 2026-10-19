@@ -348,6 +348,15 @@ export default function App() {
 
   const showResultSection = isSearching || Boolean(matchResult) || Boolean(searchError);
 
+  // Adaptive typography for displaying the complete Fibonacci term immediately without internal scrolling
+  const termTypographyClass = matchResult
+    ? matchResult.termLength > 3500
+      ? 'text-[10.5px] sm:text-[11px] leading-[1.38] tracking-tight'
+      : matchResult.termLength > 900
+      ? 'text-[11px] sm:text-xs leading-snug tracking-normal'
+      : 'text-xs sm:text-[13px] leading-relaxed tracking-wide'
+    : 'text-xs sm:text-[13px] leading-relaxed tracking-wide';
+
   return (
     <div className="max-w-[1100px] mx-auto px-4 sm:px-8 pt-6 sm:pt-8 pb-24 text-[#f2f4f8] min-h-screen flex flex-col justify-between">
       {/* Floating Glass Navigation Header */}
@@ -481,7 +490,7 @@ export default function App() {
                   onChange={handleInputChange}
                   onPaste={handleInputPaste}
                   aria-label="Number sequence to search (1 to 8 digits)"
-                  placeholder="Type 1–8 digits (e.g. 07102007)..."
+                  placeholder="Type any number (e.g. 13, 144, 1000)..."
                   className="flex-1 min-w-0 bg-transparent text-[#f2f4f8] border-0 outline-none pl-4 pr-2 py-2.5 text-base sm:text-[18px] tracking-[0.14em] font-mono placeholder:text-[#556173] placeholder:tracking-normal placeholder:text-sm sm:placeholder:text-[15px] font-semibold"
                   required
                 />
@@ -632,12 +641,6 @@ export default function App() {
                   Sequence Illuminated in 3D
                 </span>
               </div>
-
-              {matchResult && (
-                <span className="text-[11px] font-mono text-[#7d8fa6]">
-                  First match at F({matchResult.n.toLocaleString('en-US')})
-                </span>
-              )}
             </div>
 
             {/* Honest Error / Limit Message Display */}
@@ -743,8 +746,8 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Complete Mathematical Term Ribbon */}
-                <div className="p-4 sm:p-5 bg-[#080d17] border border-white/[0.08] rounded-xl mb-4 shadow-inner">
+                {/* Complete Mathematical Term Ribbon — Full Term Immediately Visible Without Internal Scrolling */}
+                <div className="p-4 sm:p-5 bg-[#080d17] border border-white/[0.08] rounded-xl mb-4 shadow-inner max-w-full overflow-hidden">
                   <div className="flex flex-wrap justify-between items-center gap-2 text-[10px] uppercase font-mono tracking-wider text-[#7d8fa6] mb-3 pb-2 border-b border-white/[0.06]">
                     <span className="flex items-center gap-1.5 text-[#9bd3ff] font-semibold">
                       <span className="w-1.5 h-1.5 rounded-full bg-[#71b9ff] shadow-[0_0_8px_#71b9ff]" />
@@ -755,7 +758,9 @@ export default function App() {
                     </span>
                   </div>
 
-                  <div className="font-mono text-xs sm:text-[13px] leading-relaxed break-all text-[#99a9bf] select-text tracking-wide whitespace-normal max-h-[320px] overflow-y-auto pr-1">
+                  <div
+                    className={`font-mono ${termTypographyClass} break-all text-[#99a9bf] select-text whitespace-normal max-w-full`}
+                  >
                     <span>{matchResult.before}</span>
                     <mark className="bg-[#1b3a5c] text-[#9bd3ff] border border-[#71b9ff]/70 rounded-md px-1.5 py-0.5 mx-0.5 font-bold shadow-[0_0_12px_rgba(113,185,255,0.4)]">
                       {matchResult.match}
@@ -786,7 +791,7 @@ export default function App() {
                       ) : (
                         <>
                           <Share2 className="w-3.5 h-3.5 text-[#f0c978]" />
-                          <span>Share Result Card</span>
+                          <span>Share Result & Card ↗</span>
                         </>
                       )}
                     </button>
@@ -834,15 +839,33 @@ export default function App() {
       {/* Footer */}
       <footer className="flex justify-between items-center gap-3 mt-12 pt-4 border-t border-white/[0.06] text-[#5d6c80] text-[11px] tracking-wider font-mono uppercase">
         <span>F(n) = F(n−1) + F(n−2)</span>
-        <button
-          type="button"
-          onClick={() => {
-            setAboutOpen(!aboutOpen);
-          }}
-          className="border-0 bg-transparent text-[#8298b4] hover:text-[#71b9ff] cursor-pointer font-inherit tracking-inherit uppercase transition"
-        >
-          {aboutOpen ? 'Close Guide ↑' : 'What is this?'}
-        </button>
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => {
+              setAboutOpen(!aboutOpen);
+            }}
+            className="border-0 bg-transparent text-[#8298b4] hover:text-[#71b9ff] cursor-pointer font-inherit tracking-inherit uppercase transition"
+          >
+            {aboutOpen ? 'Close Guide ↑' : 'What is this?'}
+          </button>
+          <a
+            href="https://www.linkedin.com/in/manaschandra0710"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Connect with Manas Chandra on LinkedIn (opens in a new tab)"
+            title="Manas Chandra on LinkedIn"
+            className="p-1.5 rounded-lg bg-white/[0.03] hover:bg-[#71b9ff]/15 border border-white/[0.08] hover:border-[#71b9ff]/50 text-[#8298b4] hover:text-[#71b9ff] hover:shadow-[0_0_12px_rgba(113,185,255,0.28)] transition duration-200 flex items-center justify-center"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className="w-3.5 h-3.5 fill-current"
+              aria-hidden="true"
+            >
+              <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z" />
+            </svg>
+          </a>
+        </div>
       </footer>
 
       {/* Share Modal Dialog */}

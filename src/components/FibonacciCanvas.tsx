@@ -76,7 +76,7 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
 
   const handleZoomOut = (e: React.MouseEvent) => {
     e.stopPropagation();
-    stateRef.current.orbitAngles.radius = Math.min(110, stateRef.current.orbitAngles.radius + 5.5);
+    stateRef.current.orbitAngles.radius = Math.min(125, stateRef.current.orbitAngles.radius + 5.5);
   };
 
   const handleResetOrbit = (e: React.MouseEvent) => {
@@ -195,7 +195,7 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
 
     const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
 
-    // --- 5. Procedural Digit Badge Textures (Matched + Surrounding Context) ---
+    // --- 5. Procedural Digit Badge Textures ---
     const createMatchedDigitBadgeTexture = (digit: number, hexColor: string) => {
       const canvas = document.createElement('canvas');
       canvas.width = 128;
@@ -236,44 +236,8 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
       return texture;
     };
 
-    const createContextDigitBadgeTexture = (digit: number, hexColor: string) => {
-      const canvas = document.createElement('canvas');
-      canvas.width = 128;
-      canvas.height = 128;
-      const ctx = canvas.getContext('2d')!;
-
-      ctx.fillStyle = 'rgba(8, 14, 26, 0.88)';
-      ctx.beginPath();
-      ctx.roundRect(18, 18, 92, 92, 20);
-      ctx.fill();
-
-      ctx.strokeStyle = 'rgba(135, 168, 210, 0.48)';
-      ctx.lineWidth = 3;
-      ctx.stroke();
-
-      // Subtle color indicator bar at bottom of context badge
-      ctx.fillStyle = hexColor;
-      ctx.beginPath();
-      ctx.roundRect(38, 94, 52, 6, 3);
-      ctx.fill();
-
-      ctx.fillStyle = '#d0dff2';
-      ctx.font = '600 48px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(digit.toString(), 64, 58);
-
-      const texture = new THREE.CanvasTexture(canvas);
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.anisotropy = maxAnisotropy;
-      return texture;
-    };
-
     const badgeTextures = DIGIT_RULES.map((rule) =>
       createMatchedDigitBadgeTexture(rule.digit, rule.color)
-    );
-    const contextBadgeTextures = DIGIT_RULES.map((rule) =>
-      createContextDigitBadgeTexture(rule.digit, rule.color)
     );
 
     // Subtle Halo Glow Texture
@@ -352,7 +316,7 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     spiralLine.frustumCulled = false;
     scene.add(spiralLine);
 
-    // --- 8. Highlighting Rig (Matched Badges + Surrounding Context Badges) ---
+    // --- 8. Highlighting Rig ---
     const highlightGroup = new THREE.Group();
     scene.add(highlightGroup);
 
@@ -360,9 +324,6 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     const badgeSprites: THREE.Sprite[] = [];
     const haloSprites: THREE.Sprite[] = [];
     const microRings: THREE.Mesh[] = [];
-
-    const maxContextBadges = 8; // 4 preceding + 4 following surrounding digits
-    const contextBadgeSprites: THREE.Sprite[] = [];
 
     const sharedRingGeometry = new THREE.RingGeometry(0.38, 0.46, 32);
     const sharedHaloMaterial = new THREE.SpriteMaterial({
@@ -380,14 +341,14 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
         depthTest: false,
       });
       const bSprite = new THREE.Sprite(bMat);
-      bSprite.scale.set(1.08, 1.08, 1.08);
+      bSprite.scale.set(1.14, 1.14, 1.14);
       bSprite.renderOrder = 20;
       bSprite.visible = false;
       highlightGroup.add(bSprite);
       badgeSprites.push(bSprite);
 
       const hSprite = new THREE.Sprite(sharedHaloMaterial.clone());
-      hSprite.scale.set(2.0, 2.0, 2.0);
+      hSprite.scale.set(2.1, 2.1, 2.1);
       hSprite.visible = false;
       highlightGroup.add(hSprite);
       haloSprites.push(hSprite);
@@ -404,20 +365,6 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
       ringMesh.visible = false;
       highlightGroup.add(ringMesh);
       microRings.push(ringMesh);
-    }
-
-    for (let c = 0; c < maxContextBadges; c++) {
-      const cMat = new THREE.SpriteMaterial({
-        transparent: true,
-        opacity: 0.92,
-        depthTest: false,
-      });
-      const cSprite = new THREE.Sprite(cMat);
-      cSprite.scale.set(0.84, 0.84, 0.84);
-      cSprite.renderOrder = 15;
-      cSprite.visible = false;
-      highlightGroup.add(cSprite);
-      contextBadgeSprites.push(cSprite);
     }
 
     const conduitMaxPoints = 8;
@@ -461,7 +408,11 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
       );
       currentDigits = allocation.digits;
       const count = currentDigits.length;
-      const spiralData = generateSpiralData(count);
+      const spiralData = generateSpiralData(
+        count,
+        allocation.matchStartIdx,
+        allocation.matchLength
+      );
 
       currentPositions = spiralData.positions;
       currentThetas = spiralData.thetas;
@@ -492,21 +443,16 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
         const rule = DIGIT_RULES[digit];
 
         const isMatchedOrb = hasMatch && i >= matchStart && i < matchEnd;
-        const isContextOrb =
-          hasMatch &&
-          !isMatchedOrb &&
-          i >= matchStart - 4 &&
-          i < matchEnd + 4;
+        const orbScale = isMatchedOrb ? 1.32 : 0.96;
 
-        const orbScale = isMatchedOrb ? 1.32 : isContextOrb ? 1.06 : 0.92;
         _vec3.set(ox, oy, oz);
         _scaleVec.set(orbScale, orbScale, orbScale);
         _matrix.compose(_vec3, _quat, _scaleVec);
         instancedMesh.setMatrixAt(i, _matrix);
 
         _color.setHex(rule.hex);
-        if (hasMatch && !isMatchedOrb && !isContextOrb) {
-          _color.multiplyScalar(0.68);
+        if (hasMatch && !isMatchedOrb) {
+          _color.multiplyScalar(0.75);
         }
         instancedMesh.setColorAt(i, _color);
       }
@@ -531,7 +477,6 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
             const ox = currentPositions[n3];
             const oy = currentPositions[n3 + 1];
             const oz = currentPositions[n3 + 2];
-            const theta = currentThetas[nodeIdx] || 0;
 
             const digit = parseInt(currentDigits[nodeIdx] || '0', 10) || 0;
             const rule = DIGIT_RULES[digit];
@@ -539,12 +484,7 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
             const bSprite = badgeSprites[b];
             bSprite.material.map = badgeTextures[digit];
             bSprite.material.needsUpdate = true;
-            // Offset slightly toward outward normal and above orb for front-facing clarity
-            bSprite.position.set(
-              ox + Math.sin(theta) * 0.36,
-              oy + 0.82,
-              oz + Math.cos(theta) * 0.36
-            );
+            bSprite.position.set(ox, oy + 0.95, oz);
             bSprite.visible = true;
 
             const hSprite = haloSprites[b];
@@ -573,33 +513,6 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
         }
         conduitAttr.needsUpdate = true;
         conduitLine.visible = true;
-
-        // Position up to 4 preceding and 4 following context digit badges
-        const contextOffsets = [-4, -3, -2, -1, 0, 1, 2, 3];
-        for (let c = 0; c < maxContextBadges; c++) {
-          const offset = contextOffsets[c];
-          const ctxIdx =
-            offset < 0 ? matchStart + offset : matchStart + trailLen + offset;
-          const cSprite = contextBadgeSprites[c];
-          if (ctxIdx >= 0 && ctxIdx < count) {
-            const c3 = ctxIdx * 3;
-            const cx = currentPositions[c3];
-            const cy = currentPositions[c3 + 1];
-            const cz = currentPositions[c3 + 2];
-            const cTheta = currentThetas[ctxIdx] || 0;
-            const digit = parseInt(currentDigits[ctxIdx] || '0', 10) || 0;
-            cSprite.material.map = contextBadgeTextures[digit];
-            cSprite.material.needsUpdate = true;
-            cSprite.position.set(
-              cx + Math.sin(cTheta) * 0.28,
-              cy + 0.72,
-              cz + Math.cos(cTheta) * 0.28
-            );
-            cSprite.visible = true;
-          } else {
-            cSprite.visible = false;
-          }
-        }
 
         // Compute exact center of the matched trail for front-facing camera view
         const exactMidIdx = matchStart + (trailLen - 1) * 0.5;
@@ -635,7 +548,7 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
         const targetVec = new THREE.Vector3(midX, midY + 0.35, midZ);
         const targetAngles = {
           theta: midTheta,
-          phi: 1.48, // Front-facing horizontal alignment
+          phi: 1.48,
           radius: frontRadius,
         };
 
@@ -648,9 +561,6 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
           badgeSprites[b].visible = false;
           haloSprites[b].visible = false;
           microRings[b].visible = false;
-        }
-        for (let c = 0; c < maxContextBadges; c++) {
-          contextBadgeSprites[c].visible = false;
         }
         conduitLine.visible = false;
         shockwaveRing.visible = false;
@@ -711,7 +621,7 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
         e.preventDefault();
         stateRef.current.orbitAngles.radius = Math.max(
           6,
-          Math.min(110, stateRef.current.orbitAngles.radius + e.deltaY * 0.03)
+          Math.min(125, stateRef.current.orbitAngles.radius + e.deltaY * 0.03)
         );
       }
     };
@@ -760,7 +670,7 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
           const diff = stateRef.current.pinchDist - dist;
           stateRef.current.orbitAngles.radius = Math.max(
             6,
-            Math.min(110, stateRef.current.orbitAngles.radius + diff * 0.08)
+            Math.min(125, stateRef.current.orbitAngles.radius + diff * 0.08)
           );
         }
         stateRef.current.pinchDist = dist;
@@ -895,9 +805,7 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
 
       orbHaloTexture.dispose();
       badgeTextures.forEach((tex) => tex.dispose());
-      contextBadgeTextures.forEach((tex) => tex.dispose());
       badgeSprites.forEach((s) => s.material.dispose());
-      contextBadgeSprites.forEach((s) => s.material.dispose());
       haloSprites.forEach((s) => s.material.dispose());
       microRings.forEach((r) => (r.material as THREE.Material).dispose());
       if (scene.environment) {
@@ -925,10 +833,6 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
   }, []);
 
   const isOrbitActive = isCtrlHeld || dragMode === 'orbit';
-
-  // Exact surrounding context inside the found term F(n) for the front-facing HUD readout
-  const contextBefore = matchResult ? matchResult.before.slice(-6) : '';
-  const contextAfter = matchResult ? matchResult.after.slice(0, 6) : '';
 
   return (
     <div
@@ -961,37 +865,6 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
             : 'READY · UP TO 10,000 DIGITS'}
         </span>
       </div>
-
-      {/* Front-Facing Exact Found Sequence Readout Bar */}
-      {matchResult && (
-        <div className="absolute left-1/2 -translate-x-1/2 bottom-14 sm:bottom-4 z-20 pointer-events-auto max-w-[92%] sm:max-w-[54%]">
-          <button
-            type="button"
-            onClick={handleResetOrbit}
-            title="Click to re-center front-facing view on matched sequence"
-            className="px-3.5 py-1.5 rounded-xl bg-[#070d19]/92 border border-[#71b9ff]/40 shadow-[0_6px_24px_rgba(0,0,0,0.8),0_0_18px_rgba(113,185,255,0.2)] backdrop-blur-md flex items-center gap-1.5 font-mono text-xs sm:text-[13px] tracking-wider cursor-pointer hover:border-[#71b9ff] transition"
-          >
-            <span className="text-[10px] uppercase tracking-wider text-[#7d8fa6] mr-1 hidden md:inline">
-              F({matchResult.n.toLocaleString()}):
-            </span>
-            {contextBefore && (
-              <span className="text-[#8ba1bd]">
-                {matchResult.before.length > 6 ? '…' : ''}
-                {contextBefore}
-              </span>
-            )}
-            <span className="px-2 py-0.5 rounded-md bg-[#163252] border border-[#71b9ff] text-white font-bold shadow-[0_0_12px_rgba(113,185,255,0.45)]">
-              {matchResult.match}
-            </span>
-            {contextAfter && (
-              <span className="text-[#8ba1bd]">
-                {contextAfter}
-                {matchResult.after.length > 6 ? '…' : ''}
-              </span>
-            )}
-          </button>
-        </div>
-      )}
 
       {/* Glassy Floating Zoom & Navigation Tools */}
       <div className="absolute right-4 bottom-4 flex items-center gap-1.5 z-20 pointer-events-auto">
@@ -1055,14 +928,12 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
       </div>
 
       {/* Bottom Status Caption */}
-      <div className="absolute left-4 bottom-4 text-[#7d8fa6] font-mono text-[11px] tracking-wide pointer-events-none z-10 max-w-[45%] sm:max-w-[30%] truncate flex items-center gap-2">
+      <div className="absolute left-4 bottom-4 text-[#7d8fa6] font-mono text-[11px] tracking-wide pointer-events-none z-10 max-w-[65%] truncate flex items-center gap-2">
         <span className="px-2 py-0.5 rounded-md bg-[#0d1627]/90 border border-white/10 text-[#9bd3ff]">
           {isOrbitActive ? 'Orbit active' : 'Move active'}
         </span>
-        <span className="hidden lg:inline truncate">
-          {matchResult
-            ? `${Math.min(MAX_SPIRAL_ORBS, matchResult.termLength).toLocaleString()} digits in 3D`
-            : 'Drag to move · Ctrl+Drag to orbit'}
+        <span className="hidden sm:inline">
+          Drag to move · Ctrl + Drag to orbit
         </span>
       </div>
     </div>

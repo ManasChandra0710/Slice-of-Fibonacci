@@ -337,24 +337,37 @@ export interface SpiralGeometryData {
 }
 
 /**
- * Generates 3D coordinates, angles, and radii for the Golden Spiral supporting up to 10,000 orbs.
- * Parameterized with x = sin(theta) * r, z = cos(theta) * r so that viewing any segment
- * from its outward radial normal presents the sequence horizontally from left to right.
+ * Generates 3D coordinates, angles, and radii for the Golden Logarithmic Spiral supporting up to 10,000 orbs.
+ * Preserves the exact original spiral structure, proportions, and spacing while scaling smoothly up to 10,000 digits.
  */
-export function generateSpiralData(count: number = 1000): SpiralGeometryData {
+export function generateSpiralData(
+  count: number = 1000,
+  focusStartIdx: number = -1,
+  focusLength: number = 0
+): SpiralGeometryData {
   const safeCount = Math.max(1, Math.min(MAX_SPIRAL_ORBS, count));
   const positions = new Float32Array(safeCount * 3);
   const thetas = new Float32Array(safeCount);
   const radii = new Float32Array(safeCount);
 
-  let theta = 0.0;
-  const targetDist = 1.55; // Uniform arc-length spacing between consecutive orbs for clear badge readability
-  const verticalSpan = Math.max(24, (safeCount / 65) * 1.75);
+  // Preserve original spiral proportions (radius vs vertical span) across all capacities up to 10,000 orbs
+  const scaleFactor = safeCount > 1000 ? Math.pow(safeCount / 1000, 0.36) : 1.0;
+  const maxRadiusSpread = 23.0 * scaleFactor;
+  const verticalSpan = 22.0 * scaleFactor;
   const dy = verticalSpan / Math.max(1, safeCount);
+
+  const baseDist =
+    safeCount <= 1000
+      ? 1.42
+      : Math.max(0.88, 1.42 / Math.pow(safeCount / 1000, 0.16));
+
+  let theta = 0.0;
+  const focusMargin = 10;
+  const hasFocus = focusStartIdx >= 0 && focusLength > 0;
 
   for (let i = 0; i < safeCount; i++) {
     const progress = i / Math.max(1, safeCount - 1);
-    const r = 9.5 + 16.5 * Math.pow(progress, 0.68);
+    const r = 2.4 + maxRadiusSpread * Math.pow(progress, 0.68);
     const y = (progress - 0.5) * verticalSpan;
 
     positions[i * 3] = Math.sin(theta) * r;
@@ -364,9 +377,15 @@ export function generateSpiralData(count: number = 1000): SpiralGeometryData {
     thetas[i] = theta;
     radii[i] = r;
 
+    // Ensure full 1.45-unit spacing around the highlighted sequence so digit badges never overlap
+    const inFocusZone =
+      hasFocus &&
+      i >= focusStartIdx - focusMargin &&
+      i <= focusStartIdx + focusLength + focusMargin;
+    const stepDist = inFocusZone ? Math.max(1.45, baseDist) : baseDist;
+
     const speed = Math.sqrt(r * r + dy * dy) || 1;
-    const dTheta = targetDist / speed;
-    theta += dTheta;
+    theta += stepDist / speed;
   }
 
   return { positions, thetas, radii, count: safeCount };
@@ -413,8 +432,8 @@ export function buildSpiralSequenceAllocation(
   const matchPos0 = Math.max(0, matchResult.pos - 1);
   const matchLen = matchResult.query.length;
 
-  // Case 1: The found Fibonacci term itself has >= 600 digits and <= maxOrbs (up to 10,000 digits)
-  if (term.length >= 600 && term.length <= maxOrbs) {
+  // Case 1: The found Fibonacci term has >= 1,000 digits and <= maxOrbs (up to 10,000 digits)
+  if (term.length >= 1000 && term.length <= maxOrbs) {
     return {
       digits: term,
       matchStartIdx: matchPos0,
@@ -426,7 +445,7 @@ export function buildSpiralSequenceAllocation(
   }
 
   // Case 2: The found Fibonacci term exceeds maxOrbs (> 10,000 digits)
-  // Center a 10,000-digit window around the matched sequence
+  // Center a full 10,000-digit window around the matched sequence
   if (term.length > maxOrbs) {
     const halfWindow = Math.floor((maxOrbs - matchLen) / 2);
     const windowStart = Math.max(0, Math.min(term.length - maxOrbs, matchPos0 - halfWindow));
@@ -441,13 +460,13 @@ export function buildSpiralSequenceAllocation(
     };
   }
 
-  // Case 3: Smaller Fibonacci terms (length < 600 digits)
-  // Embed the exact term inside its authentic continuous Fibonacci stream so the 3D swirl has ~800 orbs
-  const targetOrbs = 800;
+  // Case 3: Terms with < 1,000 digits:
+  // Embed the exact term inside its authentic continuous Fibonacci stream so the 3D swirl maintains 1,000 orbs
+  const targetOrbs = 1000;
   const streamMatch0 = Math.max(0, matchResult.streamPos - 1);
   const streamTermStart0 = Math.max(0, streamMatch0 - matchPos0);
   const neededStreamLen = Math.max(targetOrbs + 100, streamTermStart0 + term.length + targetOrbs);
-  const fullStream = getFibonacciDigitStream(Math.min(50000, neededStreamLen));
+  const fullStream = getFibonacciDigitStream(Math.min(60000, neededStreamLen));
 
   if (streamTermStart0 + term.length <= fullStream.length) {
     const windowStart = Math.max(
@@ -469,6 +488,7 @@ export function buildSpiralSequenceAllocation(
     };
   }
 
+  // If streamPos is beyond 60,000 but term.length < 1,000, pad with surrounding Fibonacci terms or display full term
   return {
     digits: term,
     matchStartIdx: matchPos0,
