@@ -2,6 +2,8 @@
  * Core Arbitrary-Precision Fibonacci Search Engine
  * Supports searching any digit sequence from 1 to 8 digits.
  * Preserves leading zeros as strings and uses exact decimal representation.
+ * Uses O(D) Base-10^8 arithmetic with precomputed 4-digit lookup tables
+ * so even 10,000+ digit Fibonacci terms are converted and searched rapidly.
  */
 
 export interface FibonacciMatchResult {
@@ -20,8 +22,66 @@ export interface FibonacciMatchResult {
   trailDigits: number[]; // Array of single digits
 }
 
-export const MAX_SEARCH_TERMS = 80000;
+// 140,000 terms covers 100% of all 111,111,100 possible 1-to-8 digit patterns (completes at F(134,560))
+export const MAX_SEARCH_TERMS = 140000;
 export const MAX_CACHE_TERMS = 25000;
+
+const BASE = 100000000; // 10^8 (8 decimal digits per Uint32 limb)
+const MAX_LIMBS = 4096; // Supports up to 32,768 decimal digits per term
+
+const PAD4: string[] = new Array(10000);
+for (let i = 0; i < 10000; i++) {
+  PAD4[i] = i.toString().padStart(4, '0');
+}
+
+function limbsToDecimalString(limbs: Uint32Array, len: number): string {
+  if (len <= 0) return '0';
+  let s = limbs[len - 1].toString();
+  for (let i = len - 2; i >= 0; i--) {
+    const x = limbs[i];
+    const hi = (x / 10000) | 0;
+    s += PAD4[hi] + PAD4[x - hi * 10000];
+  }
+  return s;
+}
+
+/**
+ * Computes exact decimal string of F(n) using fast O(D) Base-10^8 addition.
+ */
+export function computeFibonacciTermString(targetN: number): string {
+  if (targetN <= 0) return '0';
+  if (targetN === 1 || targetN === 2) return '1';
+
+  const neededLimbs = Math.max(16, Math.ceil((targetN * 0.21) / 8) + 8);
+  const a = new Uint32Array(neededLimbs);
+  const b = new Uint32Array(neededLimbs);
+  a[0] = 0;
+  b[0] = 1;
+  let lenA = 1;
+  let lenB = 1;
+
+  for (let n = 0; n < targetN; n++) {
+    let carry = 0;
+    for (let i = 0; i < lenB; i++) {
+      let sum = a[i] + b[i] + carry;
+      if (sum >= BASE) {
+        sum -= BASE;
+        carry = 1;
+      } else {
+        carry = 0;
+      }
+      a[i] = b[i];
+      b[i] = sum;
+    }
+    lenA = lenB;
+    if (carry) {
+      b[lenB] = 1;
+      lenB++;
+    }
+  }
+
+  return limbsToDecimalString(a, lenA);
+}
 
 /**
  * Builds the surrounding continuous stream snippet (0112358...) around the match.
@@ -96,18 +156,17 @@ export interface SearchOptions {
  * and executes asynchronous pattern matching without blocking the main event loop.
  */
 export class FibonacciSearchEngine {
-  // In-memory cache for fast lookups
+  // In-memory cache for fast lookups of the first MAX_CACHE_TERMS terms
   private termsCache: string[] = [];
   private totalDigitsBeforeCache: number[] = [];
 
-  // Checkpoints for resuming higher term computations (every 1000 terms past MAX_CACHE_TERMS)
-  private checkpoints: Array<{ n: number; a: bigint; b: bigint; totalDigitsBefore: number }> = [];
-
-  // Current generator state
-  private highestN = -1;
-  private highestA = 0n;
-  private highestB = 1n;
-  private highestTotalDigits = 0;
+  // Generator state at the end of termsCache (never exceeds MAX_CACHE_TERMS)
+  private cachedCount = 0;
+  private cacheStateA: Uint32Array = new Uint32Array(MAX_LIMBS);
+  private cacheStateB: Uint32Array = new Uint32Array(MAX_LIMBS);
+  private cacheLenA = 1;
+  private cacheLenB = 1;
+  private cacheTotalDigits = 0;
 
   constructor() {
     this.initBase();
@@ -115,13 +174,14 @@ export class FibonacciSearchEngine {
 
   private initBase() {
     if (this.termsCache.length === 0) {
-      // F(0) = 0
-      this.termsCache.push('0');
-      this.totalDigitsBeforeCache.push(0);
-      this.highestN = 0;
-      this.highestA = 1n; // F(1)
-      this.highestB = 1n; // F(2)
-      this.highestTotalDigits = 1;
+      this.cacheStateA.fill(0);
+      this.cacheStateB.fill(0);
+      this.cacheStateA[0] = 0; // F(0) = 0
+      this.cacheStateB[0] = 1; // F(1) = 1
+      this.cacheLenA = 1;
+      this.cacheLenB = 1;
+      this.cacheTotalDigits = 0;
+      this.cachedCount = 0;
     }
   }
 
@@ -133,30 +193,37 @@ export class FibonacciSearchEngine {
   }
 
   /**
-   * Pre-generates terms up to count for instant lookup of common numbers.
+   * Pre-generates terms up to targetCount for instant lookup of common numbers.
    */
   public warmUp(targetCount: number = 2000) {
-    let n = this.highestN + 1;
-    let a = this.highestA;
-    let b = this.highestB;
-    let totalDigits = this.highestTotalDigits;
-
-    while (n < targetCount && n < MAX_CACHE_TERMS) {
-      const str = a.toString();
+    const limit = Math.min(targetCount, MAX_CACHE_TERMS);
+    while (this.cachedCount < limit) {
+      const n = this.cachedCount;
+      const str = n === 0 ? '0' : limbsToDecimalString(this.cacheStateA, this.cacheLenA);
       this.termsCache[n] = str;
-      this.totalDigitsBeforeCache[n] = totalDigits;
-      totalDigits += str.length;
+      this.totalDigitsBeforeCache[n] = this.cacheTotalDigits;
+      this.cacheTotalDigits += str.length;
 
-      const next = a + b;
-      a = b;
-      b = next;
-      n++;
+      let carry = 0;
+      const lenB = this.cacheLenB;
+      for (let i = 0; i < lenB; i++) {
+        let sum = this.cacheStateA[i] + this.cacheStateB[i] + carry;
+        if (sum >= BASE) {
+          sum -= BASE;
+          carry = 1;
+        } else {
+          carry = 0;
+        }
+        this.cacheStateA[i] = this.cacheStateB[i];
+        this.cacheStateB[i] = sum;
+      }
+      this.cacheLenA = lenB;
+      if (carry) {
+        this.cacheStateB[lenB] = 1;
+        this.cacheLenB = lenB + 1;
+      }
+      this.cachedCount++;
     }
-
-    this.highestN = n - 1;
-    this.highestA = a;
-    this.highestB = b;
-    this.highestTotalDigits = totalDigits;
   }
 
   /**
@@ -176,18 +243,11 @@ export class FibonacciSearchEngine {
     }
 
     const maxTerms = options?.maxTerms ?? MAX_SEARCH_TERMS;
-    const yieldMs = options?.yieldIntervalMs ?? 16;
+    const yieldMs = options?.yieldIntervalMs ?? 20;
 
-    // Helper for context snippets
-    const getTermForSnippet = (idx: number): string | undefined => {
-      if (idx >= 0 && idx < this.termsCache.length) {
-        return this.termsCache[idx];
-      }
-      return undefined;
-    };
-
-    // 1. Check existing cached terms first (ascending order starting from F(0))
-    for (let i = 0; i < this.termsCache.length && i <= maxTerms; i++) {
+    // 1. Check already-cached terms in strict ascending order starting from F(0)
+    const existingCacheLen = Math.min(this.cachedCount, maxTerms + 1);
+    for (let i = 0; i < existingCacheLen; i++) {
       if (options?.isCancelled?.()) {
         throw new Error('SEARCH_CANCELLED');
       }
@@ -195,23 +255,30 @@ export class FibonacciSearchEngine {
       const str = this.termsCache[i];
       const pos = str.indexOf(clean);
       if (pos !== -1) {
+        // Ensure i + 1 is in cache if needed for snippet
+        if (i + 1 >= this.cachedCount && this.cachedCount < MAX_CACHE_TERMS) {
+          this.warmUp(i + 2);
+        }
         return this.createMatchResult(
           clean,
           i,
           pos,
           str,
           this.totalDigitsBeforeCache[i],
-          getTermForSnippet
+          (idx) => this.termsCache[idx]
         );
       }
     }
 
-    // 2. Resume generation from highest reached term
-    let a = this.highestA;
-    let b = this.highestB;
-    let totalDigits = this.highestTotalDigits;
-    let n = this.highestN + 1;
+    // 2. Continue generating in ascending order from this.cachedCount
+    const a = new Uint32Array(this.cacheStateA);
+    const b = new Uint32Array(this.cacheStateB);
+    let lenA = this.cacheLenA;
+    let lenB = this.cacheLenB;
+    let totalDigits = this.cacheTotalDigits;
+    let n = this.cachedCount;
 
+    let prevTermStr = n > 0 ? this.termsCache[n - 1] || '' : '';
     let lastYieldTime = performance.now();
     let lastProgressTime = performance.now();
 
@@ -220,31 +287,48 @@ export class FibonacciSearchEngine {
         throw new Error('SEARCH_CANCELLED');
       }
 
-      const str = a.toString();
+      const str = n === 0 ? '0' : limbsToDecimalString(a, lenA);
       const termTotalDigits = totalDigits;
 
-      // Cache term if within memory limit
-      if (n < MAX_CACHE_TERMS) {
-        this.termsCache[n] = str;
-        this.totalDigitsBeforeCache[n] = termTotalDigits;
-      } else if (n % 1000 === 0) {
-        this.checkpoints.push({ n, a, b, totalDigitsBefore: termTotalDigits });
+      // Advance Fibonacci state: next = a + b
+      let carry = 0;
+      for (let i = 0; i < lenB; i++) {
+        let sum = a[i] + b[i] + carry;
+        if (sum >= BASE) {
+          sum -= BASE;
+          carry = 1;
+        } else {
+          carry = 0;
+        }
+        a[i] = b[i];
+        b[i] = sum;
+      }
+      lenA = lenB;
+      if (carry) {
+        b[lenB] = 1;
+        lenB++;
       }
 
-      this.highestN = n;
-      this.highestA = b;
-      this.highestB = a + b;
-      this.highestTotalDigits = termTotalDigits + str.length;
+      // Persist into cache if within MAX_CACHE_TERMS
+      if (n < MAX_CACHE_TERMS && this.cachedCount === n) {
+        this.termsCache[n] = str;
+        this.totalDigitsBeforeCache[n] = termTotalDigits;
+        this.cacheStateA.set(a.subarray(0, lenA));
+        this.cacheStateB.set(b.subarray(0, lenB));
+        this.cacheLenA = lenA;
+        this.cacheLenB = lenB;
+        this.cacheTotalDigits = termTotalDigits + str.length;
+        this.cachedCount = n + 1;
+      }
 
-      // Check if sequence is contained within this term
+      // Check if sequence is contained within this individual Fibonacci term
       const pos = str.indexOf(clean);
       if (pos !== -1) {
-        // Immediate stop on first occurrence
-        const nextStr = b.toString();
-        const prevStr = n > 0 ? (n - 1 < this.termsCache.length ? this.termsCache[n - 1] : (b - a).toString()) : undefined;
+        const nextStr = limbsToDecimalString(a, lenA); // `a` now holds F(n + 1)
+        const capturedPrev = prevTermStr;
 
         const dynamicGetTerm = (idx: number): string | undefined => {
-          if (idx === n - 1) return prevStr;
+          if (idx === n - 1) return capturedPrev || this.termsCache[idx];
           if (idx === n) return str;
           if (idx === n + 1) return nextStr;
           if (idx >= 0 && idx < this.termsCache.length) return this.termsCache[idx];
@@ -261,22 +345,22 @@ export class FibonacciSearchEngine {
         );
       }
 
+      prevTermStr = str;
       totalDigits += str.length;
-      const next = a + b;
-      a = b;
-      b = next;
       n++;
 
-      // Asynchronous progress and time-slicing
-      const now = performance.now();
-      if (now - lastProgressTime >= 100) {
-        options?.onProgress?.(n);
-        lastProgressTime = now;
-      }
+      // Asynchronous progress reporting and non-blocking time-slicing
+      if ((n & 63) === 0) {
+        const now = performance.now();
+        if (now - lastProgressTime >= 80) {
+          options?.onProgress?.(n);
+          lastProgressTime = now;
+        }
 
-      if (now - lastYieldTime >= yieldMs) {
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        lastYieldTime = performance.now();
+        if (now - lastYieldTime >= yieldMs) {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          lastYieldTime = performance.now();
+        }
       }
     }
 

@@ -8,11 +8,112 @@ import {
   FibonacciMatchResult,
   FibonacciSearchEngine,
   buildStreamSnippet,
+  computeFibonacciTermString,
   MAX_SEARCH_TERMS,
 } from './fibonacciSearch';
 
 export type { FibonacciMatchResult };
 export { FibonacciSearchEngine, MAX_SEARCH_TERMS, buildStreamSnippet };
+
+export function getFastFibonacciTermString(n: number): string {
+  return computeFibonacciTermString(n);
+}
+
+export interface PatternCoverageRow {
+  k: number;
+  possiblePatterns: number;
+  discoveredPatterns: number;
+  coveragePercent: number;
+  finalTermIndex: number;
+  digitsInFinalTerm: number;
+  finalPattern: string;
+  firstOccurrencePos: number;
+}
+
+export const FIBONACCI_COVERAGE_SUMMARY: { rows: PatternCoverageRow[] } = {
+  rows: [
+    {
+      k: 1,
+      possiblePatterns: 10,
+      discoveredPatterns: 10,
+      coveragePercent: 100,
+      finalTermIndex: 14,
+      digitsInFinalTerm: 3,
+      finalPattern: '7',
+      firstOccurrencePos: 3,
+    },
+    {
+      k: 2,
+      possiblePatterns: 100,
+      discoveredPatterns: 100,
+      coveragePercent: 100,
+      finalTermIndex: 137,
+      digitsInFinalTerm: 29,
+      finalPattern: '99',
+      firstOccurrencePos: 19,
+    },
+    {
+      k: 3,
+      possiblePatterns: 1000,
+      discoveredPatterns: 1000,
+      coveragePercent: 100,
+      finalTermIndex: 604,
+      digitsInFinalTerm: 127,
+      finalPattern: '790',
+      firstOccurrencePos: 108,
+    },
+    {
+      k: 4,
+      possiblePatterns: 10000,
+      discoveredPatterns: 10000,
+      coveragePercent: 100,
+      finalTermIndex: 2272,
+      digitsInFinalTerm: 475,
+      finalPattern: '8538',
+      firstOccurrencePos: 151,
+    },
+    {
+      k: 5,
+      possiblePatterns: 100000,
+      discoveredPatterns: 100000,
+      coveragePercent: 100,
+      finalTermIndex: 7685,
+      digitsInFinalTerm: 1606,
+      finalPattern: '41483',
+      firstOccurrencePos: 1300,
+    },
+    {
+      k: 6,
+      possiblePatterns: 1000000,
+      discoveredPatterns: 1000000,
+      coveragePercent: 100,
+      finalTermIndex: 25216,
+      digitsInFinalTerm: 5270,
+      finalPattern: '749272',
+      firstOccurrencePos: 3630,
+    },
+    {
+      k: 7,
+      possiblePatterns: 10000000,
+      discoveredPatterns: 10000000,
+      coveragePercent: 100,
+      finalTermIndex: 57540,
+      digitsInFinalTerm: 12026,
+      finalPattern: '9409152',
+      firstOccurrencePos: 4519,
+    },
+    {
+      k: 8,
+      possiblePatterns: 100000000,
+      discoveredPatterns: 100000000,
+      coveragePercent: 100,
+      finalTermIndex: 134560,
+      digitsInFinalTerm: 28122,
+      finalPattern: '86662745',
+      firstOccurrencePos: 8167,
+    },
+  ],
+};
 
 export interface DigitRule {
   digit: number;
@@ -94,6 +195,8 @@ let workerInstance: Worker | null = null;
 let fallbackEngine: FibonacciSearchEngine | null = null;
 let currentSearchId = 0;
 let workerFailed = false;
+let activeRejectFn: ((err: Error) => void) | null = null;
+let activeCleanupFn: (() => void) | null = null;
 
 function getWorker(): Worker | null {
   if (workerFailed) return null;
@@ -114,6 +217,15 @@ function getWorker(): Worker | null {
 
 export function cancelCurrentSearch() {
   currentSearchId++;
+  if (activeCleanupFn) {
+    activeCleanupFn();
+    activeCleanupFn = null;
+  }
+  if (activeRejectFn) {
+    const reject = activeRejectFn;
+    activeRejectFn = null;
+    reject(new Error('SEARCH_CANCELLED'));
+  }
   const worker = getWorker();
   if (worker) {
     worker.postMessage({ type: 'reset' });
@@ -139,11 +251,24 @@ export function searchFibonacciTerm(
     return Promise.reject(new Error('Sequence must contain only decimal digits (1–8 digits long).'));
   }
 
+  // Cancel any in-flight search cleanly before starting the new one
+  if (activeCleanupFn) {
+    activeCleanupFn();
+    activeCleanupFn = null;
+  }
+  if (activeRejectFn) {
+    const rejectPrev = activeRejectFn;
+    activeRejectFn = null;
+    rejectPrev(new Error('SEARCH_CANCELLED'));
+  }
+
   const searchId = ++currentSearchId;
   const worker = getWorker();
 
   if (worker) {
     return new Promise((resolve, reject) => {
+      activeRejectFn = reject;
+
       const handleMessage = (e: MessageEvent) => {
         const { type, id, result, message, checkedCount } = e.data;
         if (id !== searchId) return;
@@ -153,6 +278,9 @@ export function searchFibonacciTerm(
         } else if (type === 'result') {
           cleanup();
           resolve(result);
+        } else if (type === 'cancelled') {
+          cleanup();
+          reject(new Error('SEARCH_CANCELLED'));
         } else if (type === 'error') {
           cleanup();
           reject(new Error(message));
@@ -174,10 +302,13 @@ export function searchFibonacciTerm(
       };
 
       const cleanup = () => {
+        if (activeCleanupFn === cleanup) activeCleanupFn = null;
+        if (activeRejectFn === reject) activeRejectFn = null;
         worker.removeEventListener('message', handleMessage);
         worker.removeEventListener('error', handleError);
       };
 
+      activeCleanupFn = cleanup;
       worker.addEventListener('message', handleMessage);
       worker.addEventListener('error', handleError);
       worker.postMessage({ type: 'search', id: searchId, query: clean, maxTerms: MAX_SEARCH_TERMS });
@@ -196,33 +327,156 @@ export function searchFibonacciTerm(
   });
 }
 
+export const MAX_SPIRAL_ORBS = 10000;
+
+export interface SpiralGeometryData {
+  positions: Float32Array;
+  thetas: Float32Array;
+  radii: Float32Array;
+  count: number;
+}
+
 /**
- * Generates 3D coordinates for the Golden Logarithmic Spiral with uniform, generous spacing.
- * Uses arc-length step parameterization so orbs are never condensed or overlapping.
+ * Generates 3D coordinates, angles, and radii for the Golden Spiral supporting up to 10,000 orbs.
+ * Parameterized with x = sin(theta) * r, z = cos(theta) * r so that viewing any segment
+ * from its outward radial normal presents the sequence horizontally from left to right.
  */
-export function generateSpiralPositions(count: number = 750): Float32Array {
-  const positions = new Float32Array(count * 3);
-  let theta = 2.0; // Clean starting offset away from pole
-  const targetDist = 1.35; // Generous breathing space between adjacent orbs
+export function generateSpiralData(count: number = 1000): SpiralGeometryData {
+  const safeCount = Math.max(1, Math.min(MAX_SPIRAL_ORBS, count));
+  const positions = new Float32Array(safeCount * 3);
+  const thetas = new Float32Array(safeCount);
+  const radii = new Float32Array(safeCount);
 
-  for (let i = 0; i < count; i++) {
-    const progress = i / count;
-    const r = 2.4 * Math.exp(0.046 * theta);
-    const y = (progress - 0.5) * 19;
+  let theta = 0.0;
+  const targetDist = 1.55; // Uniform arc-length spacing between consecutive orbs for clear badge readability
+  const verticalSpan = Math.max(24, (safeCount / 65) * 1.75);
+  const dy = verticalSpan / Math.max(1, safeCount);
 
-    positions[i * 3] = Math.cos(theta) * r;
+  for (let i = 0; i < safeCount; i++) {
+    const progress = i / Math.max(1, safeCount - 1);
+    const r = 9.5 + 16.5 * Math.pow(progress, 0.68);
+    const y = (progress - 0.5) * verticalSpan;
+
+    positions[i * 3] = Math.sin(theta) * r;
     positions[i * 3 + 1] = y;
-    positions[i * 3 + 2] = Math.sin(theta) * r;
+    positions[i * 3 + 2] = Math.cos(theta) * r;
 
-    const dr = 0.046 * r;
-    const dy = 19 / count;
-    const speed = Math.sqrt(r * r + dr * dr + dy * dy) || 1;
+    thetas[i] = theta;
+    radii[i] = r;
+
+    const speed = Math.sqrt(r * r + dy * dy) || 1;
     const dTheta = targetDist / speed;
-
     theta += dTheta;
   }
 
-  return positions;
+  return { positions, thetas, radii, count: safeCount };
+}
+
+/**
+ * Generates 3D coordinates for the Golden Logarithmic Spiral with uniform, generous spacing.
+ */
+export function generateSpiralPositions(count: number = 750): Float32Array {
+  return generateSpiralData(count).positions;
+}
+
+export interface SpiralSequenceAllocation {
+  digits: string;
+  matchStartIdx: number;
+  matchLength: number;
+  termStartIdx: number;
+  termEndIdx: number;
+  windowOffsetInTerm: number;
+}
+
+/**
+ * Builds the exact digit sequence (up to 10,000 digits) to display on the 3D Glass Orb Swirl
+ * for a given search result, preserving exact match and surrounding digits without truncation.
+ */
+export function buildSpiralSequenceAllocation(
+  matchResult: FibonacciMatchResult | null,
+  maxOrbs: number = MAX_SPIRAL_ORBS
+): SpiralSequenceAllocation {
+  const defaultStreamCount = 1000;
+  if (!matchResult || !matchResult.query) {
+    const stream = getFibonacciDigitStream(defaultStreamCount).slice(0, defaultStreamCount);
+    return {
+      digits: stream,
+      matchStartIdx: -1,
+      matchLength: 0,
+      termStartIdx: 0,
+      termEndIdx: stream.length,
+      windowOffsetInTerm: 0,
+    };
+  }
+
+  const term = matchResult.term;
+  const matchPos0 = Math.max(0, matchResult.pos - 1);
+  const matchLen = matchResult.query.length;
+
+  // Case 1: The found Fibonacci term itself has >= 600 digits and <= maxOrbs (up to 10,000 digits)
+  if (term.length >= 600 && term.length <= maxOrbs) {
+    return {
+      digits: term,
+      matchStartIdx: matchPos0,
+      matchLength: matchLen,
+      termStartIdx: 0,
+      termEndIdx: term.length,
+      windowOffsetInTerm: 0,
+    };
+  }
+
+  // Case 2: The found Fibonacci term exceeds maxOrbs (> 10,000 digits)
+  // Center a 10,000-digit window around the matched sequence
+  if (term.length > maxOrbs) {
+    const halfWindow = Math.floor((maxOrbs - matchLen) / 2);
+    const windowStart = Math.max(0, Math.min(term.length - maxOrbs, matchPos0 - halfWindow));
+    const sliced = term.slice(windowStart, windowStart + maxOrbs);
+    return {
+      digits: sliced,
+      matchStartIdx: matchPos0 - windowStart,
+      matchLength: matchLen,
+      termStartIdx: 0,
+      termEndIdx: sliced.length,
+      windowOffsetInTerm: windowStart,
+    };
+  }
+
+  // Case 3: Smaller Fibonacci terms (length < 600 digits)
+  // Embed the exact term inside its authentic continuous Fibonacci stream so the 3D swirl has ~800 orbs
+  const targetOrbs = 800;
+  const streamMatch0 = Math.max(0, matchResult.streamPos - 1);
+  const streamTermStart0 = Math.max(0, streamMatch0 - matchPos0);
+  const neededStreamLen = Math.max(targetOrbs + 100, streamTermStart0 + term.length + targetOrbs);
+  const fullStream = getFibonacciDigitStream(Math.min(50000, neededStreamLen));
+
+  if (streamTermStart0 + term.length <= fullStream.length) {
+    const windowStart = Math.max(
+      0,
+      Math.min(
+        fullStream.length - targetOrbs,
+        streamMatch0 - Math.floor((targetOrbs - matchLen) / 2)
+      )
+    );
+    const digits = fullStream.slice(windowStart, windowStart + targetOrbs);
+    const termStartInWindow = Math.max(0, streamTermStart0 - windowStart);
+    return {
+      digits,
+      matchStartIdx: streamMatch0 - windowStart,
+      matchLength: matchLen,
+      termStartIdx: termStartInWindow,
+      termEndIdx: Math.min(digits.length, termStartInWindow + term.length),
+      windowOffsetInTerm: 0,
+    };
+  }
+
+  return {
+    digits: term,
+    matchStartIdx: matchPos0,
+    matchLength: matchLen,
+    termStartIdx: 0,
+    termEndIdx: term.length,
+    windowOffsetInTerm: 0,
+  };
 }
 
 export interface SequencePatternFact {

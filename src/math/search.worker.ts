@@ -3,7 +3,7 @@
  * Keeps main thread and 3D WebGL render loop fluid during heavy arbitrary-precision computations.
  */
 
-import { FibonacciSearchEngine } from './fibonacciSearch';
+import { FibonacciSearchEngine, MAX_SEARCH_TERMS } from './fibonacciSearch';
 
 const engine = new FibonacciSearchEngine();
 let activeSearchId = 0;
@@ -28,25 +28,25 @@ self.onmessage = async (e: MessageEvent) => {
 
     try {
       const result = await engine.search(query, {
-        maxTerms: maxTerms ?? 80000,
+        maxTerms: maxTerms ?? MAX_SEARCH_TERMS,
         onProgress: (checkedCount) => {
           if (activeSearchId === id) {
             self.postMessage({ type: 'progress', id, checkedCount });
           }
         },
         isCancelled: () => activeSearchId !== id,
-        yieldIntervalMs: 32,
+        yieldIntervalMs: 28,
       });
 
       if (activeSearchId === id) {
         self.postMessage({ type: 'result', id, result });
       }
     } catch (err: unknown) {
-      if (activeSearchId === id) {
-        const message = err instanceof Error ? err.message : 'Unknown search error';
-        if (message !== 'SEARCH_CANCELLED') {
-          self.postMessage({ type: 'error', id, message });
-        }
+      const message = err instanceof Error ? err.message : 'Unknown search error';
+      if (message === 'SEARCH_CANCELLED' || activeSearchId !== id) {
+        self.postMessage({ type: 'cancelled', id });
+      } else {
+        self.postMessage({ type: 'error', id, message });
       }
     }
   }

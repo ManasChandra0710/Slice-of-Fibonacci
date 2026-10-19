@@ -2,8 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import {
-  generateSpiralPositions,
-  getFibonacciDigitStream,
+  generateSpiralData,
+  buildSpiralSequenceAllocation,
+  MAX_SPIRAL_ORBS,
   DIGIT_RULES,
   FibonacciMatchResult,
 } from '../math/fibonacci';
@@ -12,21 +13,30 @@ import { ZoomIn, ZoomOut, RotateCcw, Sparkles, Move, Compass } from 'lucide-reac
 interface FibonacciCanvasProps {
   matchResult: FibonacciMatchResult | null;
   activeQuery: string;
+  onSequenceReady?: () => void;
 }
 
 // Pre-allocated math objects to guarantee ZERO GC allocations in render loop
 const _vec3 = new THREE.Vector3();
 const _scaleVec = new THREE.Vector3();
-const _targetCam = new THREE.Vector3();
 const _matrix = new THREE.Matrix4();
 const _quat = new THREE.Quaternion();
 const _color = new THREE.Color();
 const _camRight = new THREE.Vector3();
 const _camUp = new THREE.Vector3();
 
+const DEFAULT_ORBIT_ANGLES = { theta: 0.4, phi: 1.18, radius: 42 };
+
+function computeFrontFacingCameraRadius(matchLen: number, aspect: number): number {
+  const baseRadius = 10.5 + Math.max(1, matchLen) * 1.15;
+  const aspectFactor = aspect < 1.2 ? Math.min(1.55, 1.15 / Math.max(0.55, aspect)) : 1.0;
+  return Math.min(34, Math.max(11.5, baseRadius * aspectFactor));
+}
+
 export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
   matchResult,
   activeQuery,
+  onSequenceReady,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const [dragMode, setDragMode] = useState<'move' | 'orbit'>('move');
@@ -34,42 +44,51 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
   const dragModeRef = useRef<'move' | 'orbit'>('move');
   dragModeRef.current = dragMode;
   const isCtrlHeldRef = useRef(false);
+  const onSequenceReadyRef = useRef(onSequenceReady);
+  onSequenceReadyRef.current = onSequenceReady;
 
   const stateRef = useRef({
     matchResult,
     activeQuery,
-    isFlying: false,
-    flyProgress: 1,
-    targetCoord: new THREE.Vector3(0, 0, 0),
-    camLookAt: new THREE.Vector3(0, 0, 0),
-    orbitAngles: { theta: 0.9, phi: 1.15, radius: 44 },
+    orbitAngles: { ...DEFAULT_ORBIT_ANGLES },
     orbitTarget: new THREE.Vector3(0, 0, 0),
+    camLookAt: new THREE.Vector3(0, 0, 0),
+    savedResultAngles: { ...DEFAULT_ORBIT_ANGLES },
+    savedResultTarget: new THREE.Vector3(0, 0, 0),
     isMouseDown: false,
     prevMouseX: 0,
     prevMouseY: 0,
-    trailStart: 0,
-    trailLen: 4,
+    pinchDist: 0,
     hasHighlight: false,
     shockwaveProgress: 1.0,
+    needsSequenceRebuild: true,
+    notifyReadyAfterRebuild: false,
+    activeOrbCount: 1000,
+    matchStartIdx: -1,
+    matchLength: 0,
+    windowOffsetInTerm: 0,
   });
 
   const handleZoomIn = (e: React.MouseEvent) => {
     e.stopPropagation();
-    stateRef.current.orbitAngles.radius = Math.max(12, stateRef.current.orbitAngles.radius - 7);
-    stateRef.current.isFlying = false;
+    stateRef.current.orbitAngles.radius = Math.max(6, stateRef.current.orbitAngles.radius - 4.5);
   };
 
   const handleZoomOut = (e: React.MouseEvent) => {
     e.stopPropagation();
-    stateRef.current.orbitAngles.radius = Math.min(85, stateRef.current.orbitAngles.radius + 7);
-    stateRef.current.isFlying = false;
+    stateRef.current.orbitAngles.radius = Math.min(110, stateRef.current.orbitAngles.radius + 5.5);
   };
 
   const handleResetOrbit = (e: React.MouseEvent) => {
     e.stopPropagation();
-    stateRef.current.orbitAngles = { theta: 0.9, phi: 1.15, radius: 44 };
-    stateRef.current.orbitTarget.set(0, 0, 0);
-    stateRef.current.isFlying = false;
+    if (stateRef.current.hasHighlight && stateRef.current.matchResult) {
+      stateRef.current.orbitAngles = { ...stateRef.current.savedResultAngles };
+      stateRef.current.orbitTarget.copy(stateRef.current.savedResultTarget);
+      stateRef.current.shockwaveProgress = 0;
+    } else {
+      stateRef.current.orbitAngles = { ...DEFAULT_ORBIT_ANGLES };
+      stateRef.current.orbitTarget.set(0, 0, 0);
+    }
   };
 
   const handleToggleDragMode = (e: React.MouseEvent) => {
@@ -106,15 +125,16 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
 
   useEffect(() => {
     stateRef.current.matchResult = matchResult;
+    stateRef.current.needsSequenceRebuild = true;
     if (matchResult && matchResult.query) {
-      stateRef.current.trailStart = matchResult.trailStartIndex;
-      stateRef.current.trailLen = matchResult.query.length;
       stateRef.current.hasHighlight = true;
-      stateRef.current.isFlying = true;
-      stateRef.current.flyProgress = 0;
       stateRef.current.shockwaveProgress = 0;
+      stateRef.current.notifyReadyAfterRebuild = true;
     } else {
       stateRef.current.hasHighlight = false;
+      stateRef.current.notifyReadyAfterRebuild = false;
+      stateRef.current.orbitAngles = { ...DEFAULT_ORBIT_ANGLES };
+      stateRef.current.orbitTarget.set(0, 0, 0);
     }
   }, [matchResult]);
 
@@ -122,12 +142,16 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     const container = mountRef.current;
     if (!container) return;
 
-    const width = container.clientWidth;
-    const height = container.clientHeight;
+    const width = container.clientWidth || 800;
+    const height = container.clientHeight || 440;
 
     // --- 1. Scene & Renderer ---
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x06080e, 0.012);
+    scene.fog = new THREE.FogExp2(0x06080e, 0.0085);
+
+    const isHeadless =
+      typeof navigator !== 'undefined' &&
+      (navigator.webdriver || /HeadlessChrome/i.test(navigator.userAgent));
 
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -135,10 +159,10 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
       alpha: true,
     });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(isHeadless ? 1 : Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.35;
+    renderer.toneMappingExposure = 1.22;
     container.appendChild(renderer.domElement);
 
     // --- 2. Studio Glass Environment Map ---
@@ -149,79 +173,119 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     pmremGenerator.dispose();
 
     // --- 3. Camera ---
-    const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 1000);
-    camera.position.set(24, 18, 44);
+    const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 1200);
+    camera.position.set(16, 16, 38);
     camera.lookAt(0, 0, 0);
 
     // --- 4. Studio Lighting Rig ---
-    const ambientLight = new THREE.AmbientLight(0x0a1220, 2.2);
-    scene.add(ambientLight);
+    const hemiLight = new THREE.HemisphereLight(0x9ecbff, 0x080d18, 1.4);
+    scene.add(hemiLight);
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 2.6);
+    const keyLight = new THREE.DirectionalLight(0xfff6e5, 2.2);
     keyLight.position.set(35, 50, 35);
     scene.add(keyLight);
 
-    const cyanRim = new THREE.DirectionalLight(0x71b9ff, 2.0);
+    const cyanRim = new THREE.DirectionalLight(0x71b9ff, 1.8);
     cyanRim.position.set(-35, -20, -35);
     scene.add(cyanRim);
 
-    // Dynamic sequence spotlight
-    const sequencePointLight = new THREE.PointLight(0x71b9ff, 3.5, 45);
+    const sequencePointLight = new THREE.PointLight(0x71b9ff, 2.8, 38);
     sequencePointLight.visible = false;
     scene.add(sequencePointLight);
 
-    // --- 5. Generate Procedural Digit Badge Textures (0-9) ---
-    const createDigitBadgeTexture = (digit: number, hexColor: string) => {
+    const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
+
+    // --- 5. Procedural Digit Badge Textures (Matched + Surrounding Context) ---
+    const createMatchedDigitBadgeTexture = (digit: number, hexColor: string) => {
       const canvas = document.createElement('canvas');
       canvas.width = 128;
       canvas.height = 128;
       const ctx = canvas.getContext('2d')!;
 
-      // Glass badge background
-      ctx.fillStyle = 'rgba(10, 16, 28, 0.88)';
+      // Crisp dark-glass badge background for high contrast
+      ctx.fillStyle = 'rgba(7, 12, 22, 0.94)';
       ctx.beginPath();
-      ctx.roundRect(14, 14, 100, 100, 24);
+      ctx.roundRect(12, 12, 104, 104, 24);
       ctx.fill();
 
-      // Glowing neon border
+      // Glowing border in digit's color
       ctx.strokeStyle = hexColor;
-      ctx.lineWidth = 5;
+      ctx.lineWidth = 6;
       ctx.shadowColor = hexColor;
-      ctx.shadowBlur = 16;
+      ctx.shadowBlur = 10;
       ctx.stroke();
 
-      // Inner subtle rim
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+      // Inner bright rim
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
       ctx.lineWidth = 1.5;
       ctx.shadowBlur = 0;
       ctx.stroke();
 
       // Bold number in center
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 54px monospace, "JetBrains Mono", sans-serif';
+      ctx.font = 'bold 58px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.shadowColor = hexColor;
-      ctx.shadowBlur = 12;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+      ctx.shadowBlur = 4;
       ctx.fillText(digit.toString(), 64, 66);
 
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = maxAnisotropy;
       return texture;
     };
 
-    const badgeTextures = DIGIT_RULES.map((rule) => createDigitBadgeTexture(rule.digit, rule.color));
+    const createContextDigitBadgeTexture = (digit: number, hexColor: string) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d')!;
 
-    // Halo Glow Texture
+      ctx.fillStyle = 'rgba(8, 14, 26, 0.88)';
+      ctx.beginPath();
+      ctx.roundRect(18, 18, 92, 92, 20);
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(135, 168, 210, 0.48)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      // Subtle color indicator bar at bottom of context badge
+      ctx.fillStyle = hexColor;
+      ctx.beginPath();
+      ctx.roundRect(38, 94, 52, 6, 3);
+      ctx.fill();
+
+      ctx.fillStyle = '#d0dff2';
+      ctx.font = '600 48px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(digit.toString(), 64, 58);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = maxAnisotropy;
+      return texture;
+    };
+
+    const badgeTextures = DIGIT_RULES.map((rule) =>
+      createMatchedDigitBadgeTexture(rule.digit, rule.color)
+    );
+    const contextBadgeTextures = DIGIT_RULES.map((rule) =>
+      createContextDigitBadgeTexture(rule.digit, rule.color)
+    );
+
+    // Subtle Halo Glow Texture
     const createHaloTexture = () => {
       const canvas = document.createElement('canvas');
       canvas.width = 128;
       canvas.height = 128;
       const ctx = canvas.getContext('2d')!;
       const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-      grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
-      grad.addColorStop(0.3, 'rgba(113, 185, 255, 0.85)');
-      grad.addColorStop(0.65, 'rgba(44, 131, 214, 0.3)');
+      grad.addColorStop(0, 'rgba(255, 255, 255, 0.85)');
+      grad.addColorStop(0.32, 'rgba(113, 185, 255, 0.65)');
+      grad.addColorStop(0.68, 'rgba(44, 131, 214, 0.2)');
       grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, 128, 128);
@@ -233,81 +297,62 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     const orbHaloTexture = createHaloTexture();
 
     // --- 6. Celestial Dust Background ---
-    const dustCount = 700;
+    const dustCount = 650;
     const dustGeo = new THREE.BufferGeometry();
     const dustPos = new Float32Array(dustCount * 3);
     for (let i = 0; i < dustCount * 3; i += 3) {
-      dustPos[i] = (Math.random() - 0.5) * 180;
-      dustPos[i + 1] = (Math.random() - 0.5) * 130;
-      dustPos[i + 2] = (Math.random() - 0.5) * 180;
+      dustPos[i] = (Math.random() - 0.5) * 200;
+      dustPos[i + 1] = (Math.random() - 0.5) * 180;
+      dustPos[i + 2] = (Math.random() - 0.5) * 200;
     }
     dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
     const dustMat = new THREE.PointsMaterial({
-      size: 1.1,
+      size: 1.0,
       color: 0x71b9ff,
       transparent: true,
-      opacity: 0.22,
+      opacity: 0.2,
       blending: THREE.AdditiveBlending,
+      depthWrite: false,
     });
     const dustParticles = new THREE.Points(dustGeo, dustMat);
     scene.add(dustParticles);
 
-    // --- 7. Glass Orbs Spiral (InstancedMesh) ---
-    const totalPoints = 750;
-    const digitStream = getFibonacciDigitStream(totalPoints);
-    const positions = generateSpiralPositions(totalPoints);
-
-    const orbGeometry = new THREE.SphereGeometry(0.26, 24, 24);
+    // --- 7. Glass Orbs Spiral (InstancedMesh supporting up to 10,000 digits) ---
+    const orbGeometry = new THREE.SphereGeometry(0.26, 18, 18);
     const orbMaterial = new THREE.MeshPhysicalMaterial({
-      roughness: 0.12,
-      metalness: 0.15,
-      transmission: 0.65,
-      thickness: 1.2,
-      ior: 1.5,
+      roughness: 0.15,
+      metalness: 0.12,
+      transmission: 0.45,
+      thickness: 1.0,
+      ior: 1.48,
       clearcoat: 1.0,
-      clearcoatRoughness: 0.08,
+      clearcoatRoughness: 0.1,
       transparent: true,
-      opacity: 0.95,
-      emissiveIntensity: 0.45,
+      opacity: 0.96,
     });
 
-    const instancedMesh = new THREE.InstancedMesh(orbGeometry, orbMaterial, totalPoints);
+    const instancedMesh = new THREE.InstancedMesh(orbGeometry, orbMaterial, MAX_SPIRAL_ORBS);
     instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    instancedMesh.frustumCulled = false;
     scene.add(instancedMesh);
 
-    // Initial setup with uniform size & digit colors
-    for (let i = 0; i < totalPoints; i++) {
-      const i3 = i * 3;
-      const char = digitStream[i] || '0';
-      const digit = parseInt(char, 10) || 0;
-      const rule = DIGIT_RULES[digit];
-
-      _vec3.set(positions[i3], positions[i3 + 1], positions[i3 + 2]);
-      _scaleVec.set(1.0, 1.0, 1.0);
-      _matrix.compose(_vec3, _quat, _scaleVec);
-      instancedMesh.setMatrixAt(i, _matrix);
-
-      _color.setHex(rule.hex);
-      instancedMesh.setColorAt(i, _color);
-    }
-    instancedMesh.instanceMatrix.needsUpdate = true;
-    if (instancedMesh.instanceColor) {
-      instancedMesh.instanceColor.needsUpdate = true;
-    }
-
-    // Spiral filament curve
+    // Pre-allocate full-capacity spiral line geometry (up to 10,000 points)
+    const spiralLineBuffer = new Float32Array(MAX_SPIRAL_ORBS * 3);
     const lineGeo = new THREE.BufferGeometry();
-    lineGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const linePosAttr = new THREE.BufferAttribute(spiralLineBuffer, 3);
+    linePosAttr.setUsage(THREE.DynamicDrawUsage);
+    lineGeo.setAttribute('position', linePosAttr);
     const lineMat = new THREE.LineBasicMaterial({
       color: 0x4a82b8,
       transparent: true,
-      opacity: 0.35,
+      opacity: 0.34,
       blending: THREE.AdditiveBlending,
     });
     const spiralLine = new THREE.Line(lineGeo, lineMat);
+    spiralLine.frustumCulled = false;
     scene.add(spiralLine);
 
-    // --- 8. ADVANCED HIGHLIGHTING RIG (Instanced / Pooled Geometries & Shared Materials) ---
+    // --- 8. Highlighting Rig (Matched Badges + Surrounding Context Badges) ---
     const highlightGroup = new THREE.Group();
     scene.add(highlightGroup);
 
@@ -316,44 +361,42 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     const haloSprites: THREE.Sprite[] = [];
     const microRings: THREE.Mesh[] = [];
 
-    // Pooled Shared Geometries & Materials to minimize memory footprint
-    const sharedRingGeometry = new THREE.RingGeometry(0.48, 0.58, 32);
+    const maxContextBadges = 8; // 4 preceding + 4 following surrounding digits
+    const contextBadgeSprites: THREE.Sprite[] = [];
 
-    // Shared sprite material for halo effects (per-sprite color tinting)
+    const sharedRingGeometry = new THREE.RingGeometry(0.38, 0.46, 32);
     const sharedHaloMaterial = new THREE.SpriteMaterial({
       map: orbHaloTexture,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.65,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
 
     for (let b = 0; b < maxBadges; b++) {
-      // Reusable sprite for digit badge
       const bMat = new THREE.SpriteMaterial({
         transparent: true,
-        opacity: 0.95,
+        opacity: 0.98,
         depthTest: false,
       });
       const bSprite = new THREE.Sprite(bMat);
-      bSprite.scale.set(1.4, 1.4, 1.4);
+      bSprite.scale.set(1.08, 1.08, 1.08);
+      bSprite.renderOrder = 20;
       bSprite.visible = false;
       highlightGroup.add(bSprite);
       badgeSprites.push(bSprite);
 
-      // Reusable halo sprite utilizing cloned shared material template
       const hSprite = new THREE.Sprite(sharedHaloMaterial.clone());
-      hSprite.scale.set(2.8, 2.8, 2.8);
+      hSprite.scale.set(2.0, 2.0, 2.0);
       hSprite.visible = false;
       highlightGroup.add(hSprite);
       haloSprites.push(hSprite);
 
-      // Micro reticle ring reusing the single sharedRingGeometry instance (Geometry Pooling)
       const rMat = new THREE.MeshBasicMaterial({
         color: 0x71b9ff,
         side: THREE.DoubleSide,
         transparent: true,
-        opacity: 0.8,
+        opacity: 0.75,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
       });
@@ -363,15 +406,29 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
       microRings.push(ringMesh);
     }
 
+    for (let c = 0; c < maxContextBadges; c++) {
+      const cMat = new THREE.SpriteMaterial({
+        transparent: true,
+        opacity: 0.92,
+        depthTest: false,
+      });
+      const cSprite = new THREE.Sprite(cMat);
+      cSprite.scale.set(0.84, 0.84, 0.84);
+      cSprite.renderOrder = 15;
+      cSprite.visible = false;
+      highlightGroup.add(cSprite);
+      contextBadgeSprites.push(cSprite);
+    }
+
     const conduitMaxPoints = 8;
     const conduitPositions = new Float32Array(conduitMaxPoints * 3);
     const conduitGeo = new THREE.BufferGeometry();
     conduitGeo.setAttribute('position', new THREE.BufferAttribute(conduitPositions, 3));
     const conduitMat = new THREE.LineBasicMaterial({
       color: 0x71b9ff,
-      linewidth: 3,
+      linewidth: 2,
       transparent: true,
-      opacity: 0.95,
+      opacity: 0.9,
       blending: THREE.AdditiveBlending,
     });
     const conduitLine = new THREE.Line(conduitGeo, conduitMat);
@@ -391,15 +448,225 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     shockwaveRing.visible = false;
     highlightGroup.add(shockwaveRing);
 
+    // Current spiral buffer state
+    let currentPositions: Float32Array = new Float32Array(0);
+    let currentThetas: Float32Array = new Float32Array(0);
+    let currentRadii: Float32Array = new Float32Array(0);
+    let currentDigits = '';
+
+    const rebuildSpiralForCurrentState = () => {
+      const allocation = buildSpiralSequenceAllocation(
+        stateRef.current.matchResult,
+        MAX_SPIRAL_ORBS
+      );
+      currentDigits = allocation.digits;
+      const count = currentDigits.length;
+      const spiralData = generateSpiralData(count);
+
+      currentPositions = spiralData.positions;
+      currentThetas = spiralData.thetas;
+      currentRadii = spiralData.radii;
+
+      stateRef.current.activeOrbCount = count;
+      stateRef.current.matchStartIdx = allocation.matchStartIdx;
+      stateRef.current.matchLength = allocation.matchLength;
+      stateRef.current.windowOffsetInTerm = allocation.windowOffsetInTerm;
+
+      const matchStart = allocation.matchStartIdx;
+      const matchEnd = matchStart + allocation.matchLength;
+      const hasMatch = matchStart >= 0 && allocation.matchLength > 0;
+
+      // Update InstancedMesh orbs and spiral line vertices
+      instancedMesh.count = count;
+      for (let i = 0; i < count; i++) {
+        const i3 = i * 3;
+        const ox = currentPositions[i3];
+        const oy = currentPositions[i3 + 1];
+        const oz = currentPositions[i3 + 2];
+
+        spiralLineBuffer[i3] = ox;
+        spiralLineBuffer[i3 + 1] = oy;
+        spiralLineBuffer[i3 + 2] = oz;
+
+        const digit = parseInt(currentDigits[i] || '0', 10) || 0;
+        const rule = DIGIT_RULES[digit];
+
+        const isMatchedOrb = hasMatch && i >= matchStart && i < matchEnd;
+        const isContextOrb =
+          hasMatch &&
+          !isMatchedOrb &&
+          i >= matchStart - 4 &&
+          i < matchEnd + 4;
+
+        const orbScale = isMatchedOrb ? 1.32 : isContextOrb ? 1.06 : 0.92;
+        _vec3.set(ox, oy, oz);
+        _scaleVec.set(orbScale, orbScale, orbScale);
+        _matrix.compose(_vec3, _quat, _scaleVec);
+        instancedMesh.setMatrixAt(i, _matrix);
+
+        _color.setHex(rule.hex);
+        if (hasMatch && !isMatchedOrb && !isContextOrb) {
+          _color.multiplyScalar(0.68);
+        }
+        instancedMesh.setColorAt(i, _color);
+      }
+
+      instancedMesh.instanceMatrix.needsUpdate = true;
+      if (instancedMesh.instanceColor) {
+        instancedMesh.instanceColor.needsUpdate = true;
+      }
+
+      linePosAttr.needsUpdate = true;
+      lineGeo.setDrawRange(0, count);
+
+      // Update badges and compute front-facing viewpoint if a match is active
+      if (hasMatch) {
+        const trailLen = Math.min(maxBadges, allocation.matchLength);
+        const conduitAttr = conduitLine.geometry.attributes.position as THREE.BufferAttribute;
+
+        for (let b = 0; b < maxBadges; b++) {
+          if (b < trailLen && matchStart + b < count) {
+            const nodeIdx = matchStart + b;
+            const n3 = nodeIdx * 3;
+            const ox = currentPositions[n3];
+            const oy = currentPositions[n3 + 1];
+            const oz = currentPositions[n3 + 2];
+            const theta = currentThetas[nodeIdx] || 0;
+
+            const digit = parseInt(currentDigits[nodeIdx] || '0', 10) || 0;
+            const rule = DIGIT_RULES[digit];
+
+            const bSprite = badgeSprites[b];
+            bSprite.material.map = badgeTextures[digit];
+            bSprite.material.needsUpdate = true;
+            // Offset slightly toward outward normal and above orb for front-facing clarity
+            bSprite.position.set(
+              ox + Math.sin(theta) * 0.36,
+              oy + 0.82,
+              oz + Math.cos(theta) * 0.36
+            );
+            bSprite.visible = true;
+
+            const hSprite = haloSprites[b];
+            hSprite.material.color.setHex(rule.hex);
+            hSprite.position.set(ox, oy, oz);
+            hSprite.visible = true;
+
+            const ring = microRings[b];
+            (ring.material as THREE.MeshBasicMaterial).color.setHex(rule.hex);
+            ring.position.set(ox, oy, oz);
+            ring.visible = true;
+
+            conduitAttr.setXYZ(b, ox, oy, oz);
+          } else {
+            badgeSprites[b].visible = false;
+            haloSprites[b].visible = false;
+            microRings[b].visible = false;
+            const lastValidIdx = Math.min(count - 1, matchStart + Math.max(0, trailLen - 1)) * 3;
+            conduitAttr.setXYZ(
+              b,
+              currentPositions[lastValidIdx] || 0,
+              currentPositions[lastValidIdx + 1] || 0,
+              currentPositions[lastValidIdx + 2] || 0
+            );
+          }
+        }
+        conduitAttr.needsUpdate = true;
+        conduitLine.visible = true;
+
+        // Position up to 4 preceding and 4 following context digit badges
+        const contextOffsets = [-4, -3, -2, -1, 0, 1, 2, 3];
+        for (let c = 0; c < maxContextBadges; c++) {
+          const offset = contextOffsets[c];
+          const ctxIdx =
+            offset < 0 ? matchStart + offset : matchStart + trailLen + offset;
+          const cSprite = contextBadgeSprites[c];
+          if (ctxIdx >= 0 && ctxIdx < count) {
+            const c3 = ctxIdx * 3;
+            const cx = currentPositions[c3];
+            const cy = currentPositions[c3 + 1];
+            const cz = currentPositions[c3 + 2];
+            const cTheta = currentThetas[ctxIdx] || 0;
+            const digit = parseInt(currentDigits[ctxIdx] || '0', 10) || 0;
+            cSprite.material.map = contextBadgeTextures[digit];
+            cSprite.material.needsUpdate = true;
+            cSprite.position.set(
+              cx + Math.sin(cTheta) * 0.28,
+              cy + 0.72,
+              cz + Math.cos(cTheta) * 0.28
+            );
+            cSprite.visible = true;
+          } else {
+            cSprite.visible = false;
+          }
+        }
+
+        // Compute exact center of the matched trail for front-facing camera view
+        const exactMidIdx = matchStart + (trailLen - 1) * 0.5;
+        const idxLow = Math.max(0, Math.min(count - 1, Math.floor(exactMidIdx)));
+        const idxHigh = Math.max(0, Math.min(count - 1, Math.ceil(exactMidIdx)));
+        const frac = exactMidIdx - idxLow;
+
+        const midTheta =
+          currentThetas[idxLow] * (1 - frac) + currentThetas[idxHigh] * frac;
+        const midRadius =
+          currentRadii[idxLow] * (1 - frac) + currentRadii[idxHigh] * frac;
+        const midY =
+          currentPositions[idxLow * 3 + 1] * (1 - frac) +
+          currentPositions[idxHigh * 3 + 1] * frac;
+
+        const midX = Math.sin(midTheta) * midRadius;
+        const midZ = Math.cos(midTheta) * midRadius;
+
+        shockwaveRing.position.set(midX, midY, midZ);
+        shockwaveRing.rotation.set(0, midTheta, 0);
+
+        sequencePointLight.position.set(
+          midX + Math.sin(midTheta) * 4,
+          midY + 2.5,
+          midZ + Math.cos(midTheta) * 4
+        );
+        sequencePointLight.visible = true;
+
+        const currentAspect =
+          (container.clientWidth || width) / Math.max(1, container.clientHeight || height);
+        const frontRadius = computeFrontFacingCameraRadius(trailLen, currentAspect);
+
+        const targetVec = new THREE.Vector3(midX, midY + 0.35, midZ);
+        const targetAngles = {
+          theta: midTheta,
+          phi: 1.48, // Front-facing horizontal alignment
+          radius: frontRadius,
+        };
+
+        stateRef.current.savedResultTarget.copy(targetVec);
+        stateRef.current.savedResultAngles = { ...targetAngles };
+        stateRef.current.orbitTarget.copy(targetVec);
+        stateRef.current.orbitAngles = { ...targetAngles };
+      } else {
+        for (let b = 0; b < maxBadges; b++) {
+          badgeSprites[b].visible = false;
+          haloSprites[b].visible = false;
+          microRings[b].visible = false;
+        }
+        for (let c = 0; c < maxContextBadges; c++) {
+          contextBadgeSprites[c].visible = false;
+        }
+        conduitLine.visible = false;
+        shockwaveRing.visible = false;
+        sequencePointLight.visible = false;
+      }
+    };
+
+    rebuildSpiralForCurrentState();
+    stateRef.current.needsSequenceRebuild = false;
+
     // --- 9. Interaction Handlers ---
-    // Normal drag = MOVE / PAN
-    // Ctrl + drag = ORBIT / ROTATE
     const onMouseDown = (e: MouseEvent) => {
       if (e.button !== 0 && e.button !== 2) return;
       stateRef.current.isMouseDown = true;
       stateRef.current.prevMouseX = e.clientX;
       stateRef.current.prevMouseY = e.clientY;
-      stateRef.current.isFlying = false;
     };
 
     const onMouseMove = (e: MouseEvent) => {
@@ -417,18 +684,19 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
         dragModeRef.current === 'orbit';
 
       if (isOrbiting) {
-        // CTRL + DRAG: ORBIT (Rotate camera around focus)
         stateRef.current.orbitAngles.theta -= deltaX * 0.007;
         stateRef.current.orbitAngles.phi = Math.max(
           0.15,
           Math.min(Math.PI - 0.15, stateRef.current.orbitAngles.phi - deltaY * 0.007)
         );
       } else {
-        // NORMAL DRAG: MOVE (Translate camera view plane)
         _camRight.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
         _camUp.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
 
-        const panFactor = (stateRef.current.orbitAngles.radius / Math.max(width, height)) * 1.6;
+        const panFactor =
+          (stateRef.current.orbitAngles.radius /
+            Math.max(container.clientWidth || width, container.clientHeight || height)) *
+          1.4;
         stateRef.current.orbitTarget.addScaledVector(_camRight, -deltaX * panFactor);
         stateRef.current.orbitTarget.addScaledVector(_camUp, deltaY * panFactor);
       }
@@ -439,13 +707,12 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     };
 
     const onWheel = (e: WheelEvent) => {
-      if (e.ctrlKey || e.metaKey) {
+      if (e.ctrlKey || e.metaKey || stateRef.current.hasHighlight) {
         e.preventDefault();
         stateRef.current.orbitAngles.radius = Math.max(
-          12,
-          Math.min(85, stateRef.current.orbitAngles.radius + e.deltaY * 0.05)
+          6,
+          Math.min(110, stateRef.current.orbitAngles.radius + e.deltaY * 0.03)
         );
-        stateRef.current.isFlying = false;
       }
     };
 
@@ -453,6 +720,10 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
       if (e.touches.length === 1) {
         stateRef.current.prevMouseX = e.touches[0].clientX;
         stateRef.current.prevMouseY = e.touches[0].clientY;
+      } else if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        stateRef.current.pinchDist = Math.hypot(dx, dy);
       }
     };
 
@@ -474,11 +745,25 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
         } else {
           _camRight.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
           _camUp.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
-          const panFactor = (stateRef.current.orbitAngles.radius / Math.max(width, height)) * 1.6;
+          const panFactor =
+            (stateRef.current.orbitAngles.radius /
+              Math.max(container.clientWidth || width, container.clientHeight || height)) *
+            1.4;
           stateRef.current.orbitTarget.addScaledVector(_camRight, -deltaX * panFactor);
           stateRef.current.orbitTarget.addScaledVector(_camUp, deltaY * panFactor);
         }
-        stateRef.current.isFlying = false;
+      } else if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.hypot(dx, dy);
+        if (stateRef.current.pinchDist > 0) {
+          const diff = stateRef.current.pinchDist - dist;
+          stateRef.current.orbitAngles.radius = Math.max(
+            6,
+            Math.min(110, stateRef.current.orbitAngles.radius + diff * 0.08)
+          );
+        }
+        stateRef.current.pinchDist = dist;
       }
     };
 
@@ -494,8 +779,8 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
 
     const onResize = () => {
       if (!container) return;
-      const w = container.clientWidth;
-      const h = container.clientHeight;
+      const w = container.clientWidth || 800;
+      const h = container.clientHeight || 440;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
@@ -505,200 +790,93 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     // --- 10. Animation Loop ---
     let animId: number;
     const clock = new THREE.Clock();
-    let lastHighlightedStart = -1;
 
     const animate = () => {
       animId = requestAnimationFrame(animate);
       const delta = Math.min(clock.getDelta(), 0.1);
       const time = clock.getElapsedTime();
 
-      // Synchronous rotation
-      const rotSpeed = 0.008;
-      dustParticles.rotation.y = time * 0.015;
-      spiralLine.rotation.y = time * rotSpeed;
-      instancedMesh.rotation.y = time * rotSpeed;
-      highlightGroup.rotation.y = time * rotSpeed;
+      let fireReadyCallback = false;
+      if (stateRef.current.needsSequenceRebuild) {
+        rebuildSpiralForCurrentState();
+        stateRef.current.needsSequenceRebuild = false;
+        if (stateRef.current.notifyReadyAfterRebuild) {
+          stateRef.current.notifyReadyAfterRebuild = false;
+          fireReadyCallback = true;
+        }
+      }
 
       const hasHighlight = stateRef.current.hasHighlight;
-      const trailDigits = stateRef.current.matchResult?.trailDigits || [];
-      const trailStart = Math.min(totalPoints - 1, Math.max(0, stateRef.current.trailStart));
-      const trailLen = Math.min(maxBadges, trailDigits.length);
+      dustParticles.rotation.y = time * 0.012;
 
-      if (hasHighlight && trailLen > 0) {
-        // Ensure instanced orbs at the sequence positions are set to the exact searched digits!
-        if (lastHighlightedStart !== trailStart) {
-          if (lastHighlightedStart !== -1) {
-            for (let i = 0; i < totalPoints; i++) {
-              const d = parseInt(digitStream[i] || '0', 10) || 0;
-              _color.setHex(DIGIT_RULES[d].hex);
-              instancedMesh.setColorAt(i, _color);
-            }
-          }
+      if (hasHighlight) {
+        const trailLen = Math.min(maxBadges, stateRef.current.matchLength);
+        const matchStart = stateRef.current.matchStartIdx;
+        const count = stateRef.current.activeOrbCount;
 
-          for (let b = 0; b < trailDigits.length; b++) {
-            const nodeIdx = trailStart + b;
-            if (nodeIdx < totalPoints) {
-              const d = trailDigits[b];
-              _color.setHex(DIGIT_RULES[d].hex);
-              instancedMesh.setColorAt(nodeIdx, _color);
-            }
-          }
-          if (instancedMesh.instanceColor) instancedMesh.instanceColor.needsUpdate = true;
-          lastHighlightedStart = trailStart;
-        }
-
-        const pulse = 1.0 + Math.sin(time * 5) * 0.12;
-        const conduitLinePos = conduitLine.geometry.attributes.position as THREE.BufferAttribute;
-
-        let midX = 0;
-        let midY = 0;
-        let midZ = 0;
-
-        for (let b = 0; b < maxBadges; b++) {
-          if (b < trailLen) {
-            const nodeIdx = trailStart + b;
-            const n3 = nodeIdx * 3;
-            const ox = positions[n3];
-            const oy = positions[n3 + 1];
-            const oz = positions[n3 + 2];
-
-            const digit = trailDigits[b];
-            const rule = DIGIT_RULES[digit];
-
-            // 1. Number Badge floating directly above the orb showing the searched digit
-            const bSprite = badgeSprites[b];
-            if (bSprite.material.map !== badgeTextures[digit]) {
-              bSprite.material.map = badgeTextures[digit];
-              bSprite.material.needsUpdate = true;
-            }
-            bSprite.position.set(ox, oy + 1.25 + Math.sin(time * 4 + b) * 0.1, oz);
-            bSprite.scale.set(1.4 * pulse, 1.4 * pulse, 1.4);
-            bSprite.visible = true;
-
-            // 2. Halo aura positioned right around the orb with matching digit color
-            const hSprite = haloSprites[b];
-            hSprite.material.color.setHex(rule.hex);
-            hSprite.position.set(ox, oy, oz);
-            hSprite.scale.set(2.8 * pulse, 2.8 * pulse, 2.8);
-            hSprite.visible = true;
-
-            // 3. Micro reticle ring around the orb matching digit color
+        for (let b = 0; b < trailLen; b++) {
+          const nodeIdx = matchStart + b;
+          if (nodeIdx >= 0 && nodeIdx < count) {
             const ring = microRings[b];
-            (ring.material as THREE.MeshBasicMaterial).color.setHex(rule.hex);
-            ring.position.set(ox, oy, oz);
-            ring.rotation.z = time * 2 + b;
-            ring.rotation.x = Math.PI / 2 + Math.sin(time + b) * 0.3;
-            ring.scale.set(1.1 * pulse, 1.1 * pulse, 1.1);
-            ring.visible = true;
-
-            conduitLinePos.setXYZ(b, ox, oy, oz);
-
-            midX += ox;
-            midY += oy;
-            midZ += oz;
-          } else {
-            badgeSprites[b].visible = false;
-            haloSprites[b].visible = false;
-            microRings[b].visible = false;
-            const lastIdx = (trailStart + trailLen - 1) * 3;
-            conduitLinePos.setXYZ(b, positions[lastIdx], positions[lastIdx + 1], positions[lastIdx + 2]);
+            ring.rotation.z = time * 1.4 + b * 0.5;
+            ring.rotation.y = currentThetas[nodeIdx] || 0;
           }
         }
-
-        conduitLinePos.needsUpdate = true;
-        conduitLine.visible = true;
-        conduitMat.opacity = 0.8 + Math.sin(time * 8) * 0.2;
-
-        midX /= trailLen;
-        midY /= trailLen;
-        midZ /= trailLen;
-
-        shockwaveRing.position.set(midX, midY, midZ);
-        shockwaveRing.rotation.x = Math.PI / 2;
 
         if (stateRef.current.shockwaveProgress < 1.0) {
-          stateRef.current.shockwaveProgress += delta * 1.5;
+          stateRef.current.shockwaveProgress += delta * 1.6;
           const sp = stateRef.current.shockwaveProgress;
-          const sScale = sp * 14;
+          const sScale = 1 + sp * 9;
           shockwaveRing.scale.set(sScale, sScale, sScale);
-          shockwaveMat.opacity = Math.max(0, (1 - sp) * 0.85);
+          shockwaveMat.opacity = Math.max(0, (1 - sp) * 0.75);
           shockwaveRing.visible = true;
         } else {
           shockwaveRing.visible = false;
         }
-
-        sequencePointLight.position.set(midX, midY + 3, midZ);
-        sequencePointLight.visible = true;
-
-        const rotAngle = time * rotSpeed;
-        const cosA = Math.cos(rotAngle);
-        const sinA = Math.sin(rotAngle);
-        const globalTargetX = midX * cosA - midZ * sinA;
-        const globalTargetY = midY;
-        const globalTargetZ = midX * sinA + midZ * cosA;
-
-        stateRef.current.targetCoord.set(globalTargetX, globalTargetY, globalTargetZ);
       } else {
-        for (let b = 0; b < maxBadges; b++) {
-          badgeSprites[b].visible = false;
-          haloSprites[b].visible = false;
-          microRings[b].visible = false;
+        // Gentle ambient rotation only when no search result is locked in view
+        if (!stateRef.current.isMouseDown) {
+          stateRef.current.orbitAngles.theta += delta * 0.08;
         }
-        conduitLine.visible = false;
-        shockwaveRing.visible = false;
-        sequencePointLight.visible = false;
       }
 
-      // Camera Fly-Through vs User Navigation
-      if (stateRef.current.isFlying && hasHighlight) {
-        stateRef.current.flyProgress = Math.min(1, stateRef.current.flyProgress + delta * 1.25);
-        const p = stateRef.current.flyProgress;
+      // Smooth exponential damping toward target camera state
+      const { theta, phi, radius } = stateRef.current.orbitAngles;
+      const targetPos = stateRef.current.orbitTarget;
 
-        const targetCoord = stateRef.current.targetCoord;
-        const dist = Math.hypot(targetCoord.x, targetCoord.z) || 1;
-        const normX = targetCoord.x / dist;
-        const normZ = targetCoord.z / dist;
+      const cx = targetPos.x + radius * Math.sin(phi) * Math.sin(theta);
+      const cy = targetPos.y + radius * Math.cos(phi);
+      const cz = targetPos.z + radius * Math.sin(phi) * Math.cos(theta);
 
-        _targetCam.set(
-          targetCoord.x + normX * 7.5,
-          targetCoord.y + 3.8,
-          targetCoord.z + normZ * 7.5
-        );
+      camera.position.x = THREE.MathUtils.damp(camera.position.x, cx, 6.5, delta);
+      camera.position.y = THREE.MathUtils.damp(camera.position.y, cy, 6.5, delta);
+      camera.position.z = THREE.MathUtils.damp(camera.position.z, cz, 6.5, delta);
 
-        camera.position.lerp(_targetCam, delta * 4.0);
-        stateRef.current.camLookAt.lerp(targetCoord, delta * 5.2);
-        camera.lookAt(stateRef.current.camLookAt);
+      stateRef.current.camLookAt.x = THREE.MathUtils.damp(
+        stateRef.current.camLookAt.x,
+        targetPos.x,
+        7.5,
+        delta
+      );
+      stateRef.current.camLookAt.y = THREE.MathUtils.damp(
+        stateRef.current.camLookAt.y,
+        targetPos.y,
+        7.5,
+        delta
+      );
+      stateRef.current.camLookAt.z = THREE.MathUtils.damp(
+        stateRef.current.camLookAt.z,
+        targetPos.z,
+        7.5,
+        delta
+      );
 
-        if (p >= 0.98) {
-          stateRef.current.isFlying = false;
-          stateRef.current.orbitTarget.copy(targetCoord);
-          stateRef.current.orbitAngles.radius = 11;
-        }
-      } else {
-        // Slow ambient orbit only when idle
-        if (!stateRef.current.isMouseDown && dragModeRef.current === 'orbit') {
-          stateRef.current.orbitAngles.theta += delta * 0.1;
-        }
-
-        const { theta, phi, radius } = stateRef.current.orbitAngles;
-        const targetPos = stateRef.current.orbitTarget;
-
-        const cx = targetPos.x + radius * Math.sin(phi) * Math.sin(theta);
-        const cy = targetPos.y + radius * Math.cos(phi);
-        const cz = targetPos.z + radius * Math.sin(phi) * Math.cos(theta);
-
-        camera.position.x = THREE.MathUtils.damp(camera.position.x, cx, 5, delta);
-        camera.position.y = THREE.MathUtils.damp(camera.position.y, cy, 5, delta);
-        camera.position.z = THREE.MathUtils.damp(camera.position.z, cz, 5, delta);
-
-        stateRef.current.camLookAt.x = THREE.MathUtils.damp(stateRef.current.camLookAt.x, targetPos.x, 6, delta);
-        stateRef.current.camLookAt.y = THREE.MathUtils.damp(stateRef.current.camLookAt.y, targetPos.y, 6, delta);
-        stateRef.current.camLookAt.z = THREE.MathUtils.damp(stateRef.current.camLookAt.z, targetPos.z, 6, delta);
-
-        camera.lookAt(stateRef.current.camLookAt);
-      }
-
+      camera.lookAt(stateRef.current.camLookAt);
       renderer.render(scene, camera);
+
+      if (fireReadyCallback) {
+        onSequenceReadyRef.current?.();
+      }
     };
 
     renderer.compile(scene, camera);
@@ -717,7 +895,9 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
 
       orbHaloTexture.dispose();
       badgeTextures.forEach((tex) => tex.dispose());
+      contextBadgeTextures.forEach((tex) => tex.dispose());
       badgeSprites.forEach((s) => s.material.dispose());
+      contextBadgeSprites.forEach((s) => s.material.dispose());
       haloSprites.forEach((s) => s.material.dispose());
       microRings.forEach((r) => (r.material as THREE.Material).dispose());
       if (scene.environment) {
@@ -746,6 +926,10 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
 
   const isOrbitActive = isCtrlHeld || dragMode === 'orbit';
 
+  // Exact surrounding context inside the found term F(n) for the front-facing HUD readout
+  const contextBefore = matchResult ? matchResult.before.slice(-6) : '';
+  const contextAfter = matchResult ? matchResult.after.slice(0, 6) : '';
+
   return (
     <div
       className={`relative w-full h-full select-none ${
@@ -762,19 +946,52 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
 
       {/* Top Glass Telemetry Badges */}
       <div className="absolute left-4 top-3.5 flex items-center gap-2 pointer-events-none z-10">
-        <span className="px-2.5 py-1 rounded-full bg-[#0d1627]/85 border border-white/10 text-[#71b9ff] font-mono text-[10px] tracking-[0.14em] uppercase shadow-[0_0_15px_rgba(113,185,255,0.15)] flex items-center gap-1.5 backdrop-blur-md">
+        <span className="px-2.5 py-1 rounded-full bg-[#0d1627]/90 border border-white/10 text-[#71b9ff] font-mono text-[10px] tracking-[0.14em] uppercase shadow-[0_0_15px_rgba(113,185,255,0.15)] flex items-center gap-1.5">
           <Sparkles className="w-3 h-3 text-[#71b9ff]" />
           3D Glass Orbs Swirl
         </span>
       </div>
 
-      <div className="absolute right-4 top-3.5 text-right pointer-events-none z-10">
-        <span className="px-2.5 py-1 rounded-full bg-[#0d1627]/85 border border-white/10 text-[#8bbff0] font-mono text-[10px] tracking-wide shadow-md backdrop-blur-md">
+      <div className="absolute right-4 top-3.5 text-right pointer-events-none z-10 max-w-[62%]">
+        <span className="px-2.5 py-1 rounded-full bg-[#0d1627]/90 border border-white/10 text-[#8bbff0] font-mono text-[10px] tracking-wide shadow-md inline-block truncate max-w-full">
           {matchResult
-            ? `Found "${matchResult.query}" · F(${matchResult.n.toLocaleString()})`
-            : `PREVIEW · ${activeQuery}`}
+            ? `Found "${matchResult.query}" · F(${matchResult.n.toLocaleString()}) · Pos #${matchResult.pos.toLocaleString()}`
+            : activeQuery
+            ? `PREVIEW · ${activeQuery}`
+            : 'READY · UP TO 10,000 DIGITS'}
         </span>
       </div>
+
+      {/* Front-Facing Exact Found Sequence Readout Bar */}
+      {matchResult && (
+        <div className="absolute left-1/2 -translate-x-1/2 bottom-14 sm:bottom-4 z-20 pointer-events-auto max-w-[92%] sm:max-w-[54%]">
+          <button
+            type="button"
+            onClick={handleResetOrbit}
+            title="Click to re-center front-facing view on matched sequence"
+            className="px-3.5 py-1.5 rounded-xl bg-[#070d19]/92 border border-[#71b9ff]/40 shadow-[0_6px_24px_rgba(0,0,0,0.8),0_0_18px_rgba(113,185,255,0.2)] backdrop-blur-md flex items-center gap-1.5 font-mono text-xs sm:text-[13px] tracking-wider cursor-pointer hover:border-[#71b9ff] transition"
+          >
+            <span className="text-[10px] uppercase tracking-wider text-[#7d8fa6] mr-1 hidden md:inline">
+              F({matchResult.n.toLocaleString()}):
+            </span>
+            {contextBefore && (
+              <span className="text-[#8ba1bd]">
+                {matchResult.before.length > 6 ? '…' : ''}
+                {contextBefore}
+              </span>
+            )}
+            <span className="px-2 py-0.5 rounded-md bg-[#163252] border border-[#71b9ff] text-white font-bold shadow-[0_0_12px_rgba(113,185,255,0.45)]">
+              {matchResult.match}
+            </span>
+            {contextAfter && (
+              <span className="text-[#8ba1bd]">
+                {contextAfter}
+                {matchResult.after.length > 6 ? '…' : ''}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Glassy Floating Zoom & Navigation Tools */}
       <div className="absolute right-4 bottom-4 flex items-center gap-1.5 z-20 pointer-events-auto">
@@ -782,11 +999,15 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
         <button
           type="button"
           onClick={handleToggleDragMode}
-          title={dragMode === 'move' ? 'Switch to Orbit Mode (Ctrl+Drag)' : 'Switch to Move Mode (Normal Drag)'}
-          className={`h-8 px-2.5 rounded-xl border text-xs font-mono flex items-center gap-1.5 transition shadow-lg backdrop-blur-md cursor-pointer active:scale-95 ${
+          title={
+            dragMode === 'move'
+              ? 'Switch to Orbit Mode (Ctrl+Drag)'
+              : 'Switch to Move Mode (Normal Drag)'
+          }
+          className={`h-8 px-2.5 rounded-xl border text-xs font-mono flex items-center gap-1.5 transition shadow-lg cursor-pointer active:scale-95 ${
             isOrbitActive
               ? 'bg-[#71b9ff]/20 border-[#71b9ff] text-[#71b9ff] shadow-[0_0_15px_rgba(113,185,255,0.3)]'
-              : 'bg-[#0f1728]/85 border-white/10 text-[#8e96a5] hover:text-white hover:border-[#71b9ff]'
+              : 'bg-[#0f1728]/90 border-white/10 text-[#8e96a5] hover:text-white hover:border-[#71b9ff]'
           }`}
         >
           {isOrbitActive ? (
@@ -806,7 +1027,8 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
           type="button"
           onClick={handleZoomIn}
           title="Zoom In"
-          className="w-8 h-8 rounded-xl bg-[#0f1728]/85 border border-white/10 hover:border-[#71b9ff] text-[#8e96a5] hover:text-white flex items-center justify-center transition shadow-lg backdrop-blur-md cursor-pointer hover:shadow-[0_0_12px_rgba(113,185,255,0.25)] active:scale-95"
+          aria-label="Zoom In"
+          className="w-8 h-8 rounded-xl bg-[#0f1728]/90 border border-white/10 hover:border-[#71b9ff] text-[#8e96a5] hover:text-white flex items-center justify-center transition shadow-lg cursor-pointer hover:shadow-[0_0_12px_rgba(113,185,255,0.25)] active:scale-95"
         >
           <ZoomIn className="w-4 h-4" />
         </button>
@@ -815,7 +1037,8 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
           type="button"
           onClick={handleZoomOut}
           title="Zoom Out"
-          className="w-8 h-8 rounded-xl bg-[#0f1728]/85 border border-white/10 hover:border-[#71b9ff] text-[#8e96a5] hover:text-white flex items-center justify-center transition shadow-lg backdrop-blur-md cursor-pointer hover:shadow-[0_0_12px_rgba(113,185,255,0.25)] active:scale-95"
+          aria-label="Zoom Out"
+          className="w-8 h-8 rounded-xl bg-[#0f1728]/90 border border-white/10 hover:border-[#71b9ff] text-[#8e96a5] hover:text-white flex items-center justify-center transition shadow-lg cursor-pointer hover:shadow-[0_0_12px_rgba(113,185,255,0.25)] active:scale-95"
         >
           <ZoomOut className="w-4 h-4" />
         </button>
@@ -824,18 +1047,23 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
           type="button"
           onClick={handleResetOrbit}
           title="Reset View Position"
-          className="w-8 h-8 rounded-xl bg-[#0f1728]/85 border border-white/10 hover:border-[#71b9ff] text-[#8e96a5] hover:text-white flex items-center justify-center transition shadow-lg backdrop-blur-md cursor-pointer hover:shadow-[0_0_12px_rgba(113,185,255,0.25)] active:scale-95"
+          aria-label="Reset View Position"
+          className="w-8 h-8 rounded-xl bg-[#0f1728]/90 border border-white/10 hover:border-[#71b9ff] text-[#8e96a5] hover:text-white flex items-center justify-center transition shadow-lg cursor-pointer hover:shadow-[0_0_12px_rgba(113,185,255,0.25)] active:scale-95"
         >
           <RotateCcw className="w-4 h-4" />
         </button>
       </div>
 
       {/* Bottom Status Caption */}
-      <div className="absolute left-4 bottom-4 text-[#7d8fa6] font-mono text-[11px] tracking-wide pointer-events-none z-10 max-w-[65%] truncate flex items-center gap-2">
-        <span className="px-2 py-0.5 rounded-md bg-white/[0.05] border border-white/10 text-[#9bd3ff]">
+      <div className="absolute left-4 bottom-4 text-[#7d8fa6] font-mono text-[11px] tracking-wide pointer-events-none z-10 max-w-[45%] sm:max-w-[30%] truncate flex items-center gap-2">
+        <span className="px-2 py-0.5 rounded-md bg-[#0d1627]/90 border border-white/10 text-[#9bd3ff]">
           {isOrbitActive ? 'Orbit active' : 'Move active'}
         </span>
-        <span className="hidden sm:inline">Drag to move · Ctrl + Drag to orbit</span>
+        <span className="hidden lg:inline truncate">
+          {matchResult
+            ? `${Math.min(MAX_SPIRAL_ORBS, matchResult.termLength).toLocaleString()} digits in 3D`
+            : 'Drag to move · Ctrl+Drag to orbit'}
+        </span>
       </div>
     </div>
   );

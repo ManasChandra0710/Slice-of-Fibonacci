@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { FibonacciCanvas } from './components/FibonacciCanvas';
 import {
   searchFibonacciTerm,
@@ -13,12 +13,22 @@ import {
   GeneratedShareCard,
   ORIGINAL_HOMEPAGE_URL,
   SHARE_CAPTION,
-  getOrdinalSuffix,
 } from './utils/shareCard';
-import { Volume2, VolumeX, Sparkles, Send, Music, Share2, Check, X, RotateCcw } from 'lucide-react';
+import {
+  Volume2,
+  VolumeX,
+  Sparkles,
+  Send,
+  Music,
+  Share2,
+  Check,
+  X,
+  RotateCcw,
+  AlertCircle,
+} from 'lucide-react';
 
 /**
- * Extracts searched number from current URL path (/13, /144, /1000).
+ * Extracts searched number from current URL path (/13, /144, /07102007).
  * Gracefully ignores non-digit paths (e.g. /about, /) and cleans up malformed input.
  */
 function extractNumberFromPathname(pathname: string): string {
@@ -60,7 +70,15 @@ export default function App() {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [shareCard, setShareCard] = useState<GeneratedShareCard | null>(null);
   const [isGeneratingShare, setIsGeneratingShare] = useState(false);
+
+  const searchBarRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const swirlSectionRef = useRef<HTMLElement>(null);
   const resultRef = useRef<HTMLElement>(null);
+
+  // Track active search request ID to prevent stale/duplicate results
+  const activeSearchReqRef = useRef(0);
+  const pendingScrollToSwirlRef = useRef(false);
 
   // Restart background music from 00:00 on page refresh/initial load
   useEffect(() => {
@@ -75,19 +93,51 @@ export default function App() {
     return unsub;
   }, []);
 
-  // Clear search and cleanly return URL to root '/'
-  const handleClear = () => {
+  // Smooth scroll to the 3D Glass Orb Swirl once the search result and 3D visualization are ready
+  const handleSequenceReady = useCallback(() => {
+    if (!pendingScrollToSwirlRef.current) return;
+    pendingScrollToSwirlRef.current = false;
+
+    requestAnimationFrame(() => {
+      if (swirlSectionRef.current) {
+        swirlSectionRef.current.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        });
+      }
+    });
+  }, []);
+
+  // Clear search, reset visualization & status state, and smoothly scroll back to input bar
+  const handleClear = (scrollToInput: boolean = true) => {
+    activeSearchReqRef.current++;
+    pendingScrollToSwirlRef.current = false;
     cancelCurrentSearch();
+    setIsSearching(false);
     setInputValue('');
     setPreviewQuery('');
     setMatchResult(null);
     setSearchError(null);
     setSearchProgress(null);
+    setShareCard(null);
+    setIsShareModalOpen(false);
+
     if (typeof document !== 'undefined') {
       document.title = 'Slice of Fibonacci';
     }
     if (typeof window !== 'undefined' && window.location.pathname !== '/') {
       window.history.pushState({}, '', '/');
+    }
+
+    if (scrollToInput) {
+      if (searchBarRef.current) {
+        searchBarRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (typeof window !== 'undefined') {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+      setTimeout(() => {
+        inputRef.current?.focus({ preventScroll: true });
+      }, 320);
     }
   };
 
@@ -95,10 +145,14 @@ export default function App() {
   const handleSearch = async (val: string, pushToHistory: boolean = true) => {
     const clean = val.replace(/[^0-9]/g, '').slice(0, 8);
     if (!clean) {
-      handleClear();
+      handleClear(false);
       return;
     }
 
+    const reqId = ++activeSearchReqRef.current;
+    pendingScrollToSwirlRef.current = false;
+
+    setInputValue(clean);
     setIsSearching(true);
     setSearchError(null);
     setSearchProgress(0);
@@ -119,30 +173,32 @@ export default function App() {
 
     try {
       const res = await searchFibonacciTerm(clean, (checkedCount) => {
-        setSearchProgress(checkedCount);
+        if (activeSearchReqRef.current === reqId) {
+          setSearchProgress(checkedCount);
+        }
       });
+
+      if (activeSearchReqRef.current !== reqId) return;
+
+      pendingScrollToSwirlRef.current = true;
       setMatchResult(res);
       setSearchError(null);
       setSearchProgress(null);
-
-      setTimeout(() => {
-        if (resultRef.current && window.innerWidth < 768) {
-          resultRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
-      }, 300);
+      setIsSearching(false);
     } catch (err: unknown) {
+      if (activeSearchReqRef.current !== reqId) return;
+
       const message = err instanceof Error ? err.message : 'Search could not be completed.';
       if (message !== 'SEARCH_CANCELLED') {
         setSearchError(message);
         setMatchResult(null);
         setSearchProgress(null);
       }
-    } finally {
       setIsSearching(false);
     }
   };
 
-  // Load searched number directly from URL path (/13, /144, /1000) on page load or refresh
+  // Load searched number directly from URL path (/13, /144, /07102007) on page load or refresh
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -171,10 +227,15 @@ export default function App() {
         setInputValue(num);
         handleSearch(num, false);
       } else {
-        // Navigated back to root '/' or invalid path -> restore clean initial state
+        activeSearchReqRef.current++;
+        pendingScrollToSwirlRef.current = false;
+        cancelCurrentSearch();
+        setIsSearching(false);
         setInputValue('');
         setPreviewQuery('');
         setMatchResult(null);
+        setSearchError(null);
+        setSearchProgress(null);
         if (typeof document !== 'undefined') {
           document.title = 'Slice of Fibonacci';
         }
@@ -188,6 +249,32 @@ export default function App() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     handleSearch(inputValue, true);
+  };
+
+  // Enforce 1–8 decimal digits while preserving leading zeros during typing
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const clean = e.target.value.replace(/[^0-9]/g, '').slice(0, 8);
+    setInputValue(clean);
+    setPreviewQuery(clean);
+  };
+
+  // Enforce 1–8 decimal digits while preserving leading zeros during pasting
+  const handleInputPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pastedDigits = (e.clipboardData?.getData('text') || '').replace(/[^0-9]/g, '');
+    if (!pastedDigits) return;
+    const input = e.currentTarget;
+    const selStart = input.selectionStart ?? inputValue.length;
+    const selEnd = input.selectionEnd ?? inputValue.length;
+    const nextVal = (
+      inputValue.slice(0, selStart) +
+      pastedDigits +
+      inputValue.slice(selEnd)
+    )
+      .replace(/[^0-9]/g, '')
+      .slice(0, 8);
+    setInputValue(nextVal);
+    setPreviewQuery(nextVal);
   };
 
   // Generate clean shareable URL for the current searched number
@@ -252,8 +339,14 @@ export default function App() {
     soundEngine.togglePlayPause();
   };
 
-  // Live preview digits for input
-  const liveDigits = inputValue.split('').filter((c) => /^[0-9]$/.test(c)).map(Number);
+  // Live preview digits for input (up to 8 digits)
+  const liveDigits = inputValue
+    .slice(0, 8)
+    .split('')
+    .filter((c) => /^[0-9]$/.test(c))
+    .map(Number);
+
+  const showResultSection = isSearching || Boolean(matchResult) || Boolean(searchError);
 
   return (
     <div className="max-w-[1100px] mx-auto px-4 sm:px-8 pt-6 sm:pt-8 pb-24 text-[#f2f4f8] min-h-screen flex flex-col justify-between">
@@ -261,7 +354,7 @@ export default function App() {
       <header className="glass-panel rounded-2xl px-5 py-3.5 flex justify-between items-center text-xs tracking-wide">
         <button
           type="button"
-          onClick={handleClear}
+          onClick={() => handleClear(true)}
           className="flex items-center gap-3 font-semibold text-sm sm:text-base tracking-tight cursor-pointer text-left focus:outline-none group"
           title="Return to Slice of Fibonacci Homepage (/)"
         >
@@ -310,7 +403,6 @@ export default function App() {
         </button>
 
         <div className="flex items-center gap-2 sm:gap-3">
-
           {/* Interstellar Music Control */}
           <div className="flex items-center gap-2 p-1.5 pl-2.5 pr-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 hover:border-[#71b9ff]/40 transition duration-300 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.35)]">
             <button
@@ -372,66 +464,64 @@ export default function App() {
             Every digit in the sequence is a radiant glass orb in 3D space. Type your number and watch its exact sequence of orbs illuminate in the swirl.
           </p>
 
-          {/* Glass Search Console */}
-          <div className="max-w-[460px] mx-auto mt-7">
+          {/* Constant-Width Glass Search Console (1 to 8 digits, leading zeros preserved) */}
+          <div ref={searchBarRef} className="w-full max-w-[600px] mx-auto mt-7">
             <form
               onSubmit={handleSubmit}
-              className="glass-panel-glow rounded-2xl p-2 flex items-center gap-2 transition duration-300"
+              className="glass-panel-glow rounded-2xl p-2 flex items-center gap-2 w-full transition duration-300"
             >
-              <div className="relative flex-1 flex items-center">
+              <div className="relative flex-1 min-w-0 flex items-center">
                 <input
+                  ref={inputRef}
                   type="text"
                   inputMode="numeric"
                   autoComplete="off"
-                  maxLength={12}
+                  maxLength={8}
                   value={inputValue}
-                  onChange={(e) => {
-                    const val = e.target.value.replace(/[^0-9]/g, '');
-                    setInputValue(val);
-                    if (val) setPreviewQuery(val);
-                  }}
-                  aria-label="Number sequence to search"
-                  placeholder="Type any number (e.g. 13, 144, 1000)..."
-                  className="w-full bg-transparent text-[#f2f4f8] border-0 outline-none px-4 py-2.5 text-base sm:text-[18px] tracking-[0.16em] font-mono placeholder:text-[#556173] placeholder:tracking-normal font-semibold"
+                  onChange={handleInputChange}
+                  onPaste={handleInputPaste}
+                  aria-label="Number sequence to search (1 to 8 digits)"
+                  placeholder="Type 1–8 digits (e.g. 07102007)..."
+                  className="flex-1 min-w-0 bg-transparent text-[#f2f4f8] border-0 outline-none pl-4 pr-2 py-2.5 text-base sm:text-[18px] tracking-[0.14em] font-mono placeholder:text-[#556173] placeholder:tracking-normal placeholder:text-sm sm:placeholder:text-[15px] font-semibold"
                   required
                 />
 
-                {/* Clear search input button */}
-                {inputValue && (
+                {/* Fixed-width clear button slot so input width never shifts */}
+                <div className="w-7 h-7 shrink-0 flex items-center justify-center">
                   <button
                     type="button"
-                    onClick={handleClear}
-                    className="p-1 rounded-md text-[#6e7d94] hover:text-white hover:bg-white/[0.08] transition mr-1 cursor-pointer"
+                    onClick={() => handleClear(false)}
+                    tabIndex={inputValue ? 0 : -1}
+                    className={`p-1 rounded-md text-[#6e7d94] hover:text-white hover:bg-white/[0.08] transition cursor-pointer ${
+                      inputValue ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                    }`}
                     title="Clear search and return to homepage (/)"
                     aria-label="Clear search input"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
-                )}
+                </div>
 
-                {/* Live typing glass orb preview inside input */}
-                {liveDigits.length > 0 && (
-                  <div className="hidden sm:flex items-center gap-1.5 pr-3 pointer-events-none">
-                    {liveDigits.map((d, i) => (
-                      <span
-                        key={i}
-                        className="w-4 h-4 rounded-full glass-orb"
-                        style={{
-                          backgroundColor: DIGIT_RULES[d].color,
-                          color: DIGIT_RULES[d].color,
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
+                {/* Fixed-width live typing glass orb preview slot so input width stays constant */}
+                <div className="hidden sm:flex items-center justify-end gap-1.5 w-[156px] shrink-0 pr-2 pointer-events-none">
+                  {liveDigits.map((d, i) => (
+                    <span
+                      key={i}
+                      className="w-3.5 h-3.5 rounded-full glass-orb shrink-0"
+                      style={{
+                        backgroundColor: DIGIT_RULES[d].color,
+                        color: DIGIT_RULES[d].color,
+                      }}
+                    />
+                  ))}
+                </div>
               </div>
 
               <button
                 type="submit"
-                disabled={isSearching}
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#71b9ff] to-[#2c83d6] hover:from-[#8ec8ff] hover:to-[#3891e8] text-[#060b14] font-semibold text-xs sm:text-[13px] tracking-wide font-mono cursor-pointer whitespace-nowrap shadow-[0_0_20px_rgba(113,185,255,0.4)] hover:-translate-y-0.5 active:translate-y-0 transition duration-200 disabled:opacity-55 disabled:cursor-wait flex items-center gap-1.5"
+                className="w-[116px] shrink-0 py-2.5 rounded-xl bg-gradient-to-r from-[#71b9ff] to-[#2c83d6] hover:from-[#8ec8ff] hover:to-[#3891e8] text-[#060b14] font-semibold text-xs sm:text-[13px] tracking-wide font-mono cursor-pointer whitespace-nowrap shadow-[0_0_20px_rgba(113,185,255,0.4)] hover:-translate-y-0.5 active:translate-y-0 transition duration-200 flex items-center justify-center gap-1.5"
               >
-                <Send className="w-3.5 h-3.5" />
+                <Send className="w-3.5 h-3.5 shrink-0" />
                 <span>{isSearching ? 'Scanning…' : 'Find it'}</span>
               </button>
             </form>
@@ -456,7 +546,12 @@ export default function App() {
                   key={rule.digit}
                   type="button"
                   onClick={() => {
-                    setInputValue((prev) => (prev.length < 6 ? prev + rule.digit : prev));
+                    setInputValue((prev) => {
+                      if (prev.length >= 8) return prev;
+                      const next = (prev + String(rule.digit)).slice(0, 8);
+                      setPreviewQuery(next);
+                      return next;
+                    });
                   }}
                   className="flex flex-col items-center gap-2 p-2 rounded-xl bg-white/[0.02] hover:bg-white/[0.08] border border-white/[0.04] hover:border-white/20 transition group cursor-pointer"
                   title={`Click to add digit ${rule.digit} (${rule.name})`}
@@ -488,22 +583,48 @@ export default function App() {
 
         {/* 3D Glass Spiral Viewport Section */}
         <section
+          ref={swirlSectionRef}
           className="scale-visual-container"
           aria-label="3D Fibonacci spiral showing illuminated glass orbs"
         >
           <FibonacciCanvas
             matchResult={matchResult}
             activeQuery={previewQuery}
+            onSequenceReady={handleSequenceReady}
           />
         </section>
 
-        {/* Results Glass Console */}
-        {matchResult && (
+        {/* Results Glass Console ("Sequence Illuminated in 3D") */}
+        {showResultSection && (
           <section
             ref={resultRef}
-            className="max-w-[780px] mx-auto mb-8 glass-panel rounded-2xl p-5 sm:p-7 animate-rise"
+            className="max-w-[960px] mx-auto mb-8 glass-panel rounded-2xl p-5 sm:p-7 animate-rise relative overflow-hidden"
             aria-live="polite"
           >
+            {/* Non-Blocking Top Progress Indicator Bar */}
+            {isSearching && (
+              <div className="mb-5 rounded-xl bg-[#091326]/90 border border-[#71b9ff]/30 overflow-hidden shadow-[0_0_20px_rgba(113,185,255,0.12)]">
+                <div className="h-1 w-full bg-[#0d1b33] overflow-hidden relative">
+                  <div className="h-full w-full bg-gradient-to-r from-transparent via-[#71b9ff] to-[#f0c978] animate-pulse" />
+                </div>
+                <div className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+                  <div className="flex items-center gap-2 text-[#9ecbff]">
+                    <span className="w-3.5 h-3.5 border-2 border-[#71b9ff]/30 border-t-[#71b9ff] rounded-full animate-spin shrink-0" />
+                    <span>
+                      Searching ascending Fibonacci terms for{' '}
+                      <strong className="text-white">"{previewQuery}"</strong>…
+                    </span>
+                  </div>
+                  <span className="text-[#f0c978] text-[11px]">
+                    {searchProgress !== null && searchProgress > 0
+                      ? `Scanned F(0) – F(${searchProgress.toLocaleString('en-US')})`
+                      : 'Scanning initial terms…'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Header Row */}
             <div className="flex justify-between items-center gap-3 pb-4 mb-5 border-b border-white/[0.08]">
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#71b9ff] shadow-[0_0_12px_#71b9ff]" />
@@ -511,152 +632,182 @@ export default function App() {
                   Sequence Illuminated in 3D
                 </span>
               </div>
-            </div>
 
-            {/* Sequence Orbs Visual Trail */}
-            <div className="mb-6 p-4 rounded-xl bg-[#090f1a]/80 border border-white/[0.06] flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div>
-                <div className="text-[10px] font-mono uppercase tracking-[0.12em] text-[#7d8fa6] mb-1">
-                  Active Sequence Trail
-                </div>
-                <div className="text-xl font-bold font-mono tracking-wider text-white">
-                  "{matchResult.query}"
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 p-2.5 rounded-xl bg-black/40 border border-white/[0.08]">
-                {matchResult.trailDigits.map((d, idx) => {
-                  const rule = DIGIT_RULES[d];
-                  return (
-                    <div key={idx} className="flex flex-col items-center gap-1">
-                      <span
-                        className="w-7 h-7 rounded-full glass-orb transition duration-200"
-                        style={{
-                          backgroundColor: rule.color,
-                          color: rule.color,
-                        }}
-                      />
-                      <span className="font-mono text-xs font-bold text-white">{d}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* 4-Column Glass Stat Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-                <div className="text-[10px] font-mono uppercase tracking-wider text-[#7d8fa6]">
-                  Fibonacci Term
-                </div>
-                <div className="text-xl sm:text-2xl font-bold font-mono text-[#71b9ff] mt-1">
-                  F({matchResult.n.toLocaleString('en-US')})
-                </div>
-                <div className="text-[11px] text-[#6e7e94] mt-1">
-                  The {matchResult.n === 0 ? '1st' : `${(matchResult.n + 1).toLocaleString('en-US')}th`} term
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-                <div className="text-[10px] font-mono uppercase tracking-wider text-[#7d8fa6]">
-                  Position in F({matchResult.n})
-                </div>
-                <div className="text-xl sm:text-2xl font-bold font-mono text-white mt-1">
-                  #{matchResult.pos.toLocaleString('en-US')}
-                </div>
-                <div className="text-[11px] text-[#6e7e94] mt-1">
-                  1-based digit index
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-                <div className="text-[10px] font-mono uppercase tracking-wider text-[#7d8fa6]">
-                  Stream Position
-                </div>
-                <div className="text-xl sm:text-2xl font-bold font-mono text-[#f0c978] mt-1">
-                  #{matchResult.streamPos.toLocaleString('en-US')}
-                </div>
-                <div className="text-[11px] text-[#6e7e94] mt-1">
-                  in 0112358... sequence
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-                <div className="text-[10px] font-mono uppercase tracking-wider text-[#7d8fa6]">
-                  Term Length
-                </div>
-                <div className="text-xl sm:text-2xl font-bold font-mono text-[#a4b5cb] mt-1">
-                  {matchResult.termLength.toLocaleString('en-US')}
-                </div>
-                <div className="text-[11px] text-[#6e7e94] mt-1">
-                  Total decimal digits
-                </div>
-              </div>
-            </div>
-
-            {/* Complete Mathematical Term Ribbon (Targeted Element) */}
-            <div className="p-4 sm:p-5 bg-[#080d17] border border-white/[0.08] rounded-xl mb-4 shadow-inner">
-              <div className="flex flex-wrap justify-between items-center gap-2 text-[10px] uppercase font-mono tracking-wider text-[#7d8fa6] mb-3 pb-2 border-b border-white/[0.06]">
-                <span className="flex items-center gap-1.5 text-[#9bd3ff] font-semibold">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#71b9ff] shadow-[0_0_8px_#71b9ff]" />
-                  Complete Term F({matchResult.n.toLocaleString('en-US')})
+              {matchResult && (
+                <span className="text-[11px] font-mono text-[#7d8fa6]">
+                  First match at F({matchResult.n.toLocaleString('en-US')})
                 </span>
-                <span className="text-[#a4b5cb]">
-                  {matchResult.termLength.toLocaleString('en-US')} Digits (Full Term) · Found at digit #{matchResult.pos.toLocaleString('en-US')}
-                </span>
-              </div>
-
-              <div className="font-mono text-xs sm:text-[13px] leading-relaxed break-all text-[#99a9bf] select-text tracking-wide whitespace-normal">
-                <span>{matchResult.before}</span>
-                <mark className="bg-[#1b3a5c] text-[#9bd3ff] border border-[#71b9ff]/70 rounded-md px-1.5 py-0.5 mx-0.5 font-bold shadow-[0_0_12px_rgba(113,185,255,0.4)]">
-                  {matchResult.match}
-                </mark>
-                <span>{matchResult.after}</span>
-              </div>
+              )}
             </div>
 
-            {/* Actions Row */}
-            <div className="flex flex-wrap justify-between items-center gap-3 pt-1">
-              <div className="flex items-center gap-2">
+            {/* Honest Error / Limit Message Display */}
+            {searchError && !isSearching && (
+              <div className="p-4 sm:p-5 rounded-xl bg-[#180d14]/90 border border-[#eb4f27]/40 text-[#f2dce0] mb-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-[#eb4f27] shrink-0 mt-0.5" />
+                  <div className="text-xs sm:text-sm leading-relaxed font-mono">
+                    {searchError}
+                  </div>
+                </div>
                 <button
                   type="button"
-                  onClick={handleShare}
-                  disabled={isGeneratingShare}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#f0c978]/25 via-[#71b9ff]/25 to-[#2c83d6]/25 hover:from-[#f0c978]/35 hover:via-[#71b9ff]/35 hover:to-[#2c83d6]/35 border border-[#f0c978]/50 hover:border-[#f0c978]/80 text-[#f0c978] hover:text-white text-xs font-mono transition cursor-pointer flex items-center gap-1.5 shadow-[0_0_18px_rgba(240,201,120,0.2)] active:scale-95 disabled:opacity-50"
-                >
-                  {isGeneratingShare ? (
-                    <>
-                      <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>Generating Card...</span>
-                    </>
-                  ) : shareCopied ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-[#f0c978]" />
-                      <span className="text-[#f0c978]">Link & Card Ready ✓</span>
-                    </>
-                  ) : (
-                    <>
-                      <Share2 className="w-3.5 h-3.5 text-[#f0c978]" />
-                      <span>Share Result & Card ↗</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleClear}
-                  className="px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/10 hover:border-white/20 text-[#8e9cb0] hover:text-white text-xs font-mono transition cursor-pointer flex items-center gap-1.5 active:scale-95"
-                  title="Clear search and return to landing page (/)"
+                  onClick={() => handleClear(true)}
+                  className="px-3.5 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-mono text-white shrink-0 flex items-center gap-1.5 cursor-pointer transition"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   <span>Clear Search</span>
                 </button>
               </div>
+            )}
 
-              <span className="text-[11px] text-[#657386] font-mono">
-                Digits counted starting from index 1.
-              </span>
-            </div>
+            {matchResult && (
+              <>
+                {/* Sequence Orbs Visual Trail */}
+                <div className="mb-6 p-4 rounded-xl bg-[#090f1a]/80 border border-white/[0.06] flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div>
+                    <div className="text-[10px] font-mono uppercase tracking-[0.12em] text-[#7d8fa6] mb-1">
+                      Active Sequence Trail
+                    </div>
+                    <div className="text-xl font-bold font-mono tracking-wider text-white">
+                      "{matchResult.query}"
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-center gap-2.5 sm:gap-3 p-2.5 rounded-xl bg-black/40 border border-white/[0.08]">
+                    {matchResult.trailDigits.map((d, idx) => {
+                      const rule = DIGIT_RULES[d];
+                      return (
+                        <div key={idx} className="flex flex-col items-center gap-1">
+                          <span
+                            className="w-7 h-7 rounded-full glass-orb transition duration-200"
+                            style={{
+                              backgroundColor: rule.color,
+                              color: rule.color,
+                            }}
+                          />
+                          <span className="font-mono text-xs font-bold text-white">{d}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 4-Column Glass Stat Cards (Expanded Stream Position Card Width) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1.15fr_1.15fr_1.55fr_1.05fr] gap-3.5 mb-5">
+                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06] min-w-0 overflow-hidden">
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-[#7d8fa6]">
+                      Fibonacci Term
+                    </div>
+                    <div className="text-lg sm:text-xl md:text-2xl font-bold font-mono text-[#71b9ff] mt-1 whitespace-nowrap">
+                      F({matchResult.n.toLocaleString('en-US')})
+                    </div>
+                    <div className="text-[11px] text-[#6e7e94] mt-1">
+                      The {matchResult.n === 0 ? '1st' : `${(matchResult.n + 1).toLocaleString('en-US')}th`} term
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06] min-w-0 overflow-hidden">
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-[#7d8fa6]">
+                      Position in F({matchResult.n.toLocaleString('en-US')})
+                    </div>
+                    <div className="text-lg sm:text-xl md:text-2xl font-bold font-mono text-white mt-1 whitespace-nowrap">
+                      #{matchResult.pos.toLocaleString('en-US')}
+                    </div>
+                    <div className="text-[11px] text-[#6e7e94] mt-1">
+                      1-based digit index
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06] min-w-0 overflow-hidden">
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-[#7d8fa6]">
+                      Stream Position
+                    </div>
+                    <div className="text-lg sm:text-xl md:text-[22px] font-bold font-mono text-[#f0c978] mt-1 whitespace-nowrap tracking-tight">
+                      #{matchResult.streamPos.toLocaleString('en-US')}
+                    </div>
+                    <div className="text-[11px] text-[#6e7e94] mt-1">
+                      in 0112358... sequence
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06] min-w-0 overflow-hidden">
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-[#7d8fa6]">
+                      Term Length
+                    </div>
+                    <div className="text-lg sm:text-xl md:text-2xl font-bold font-mono text-[#a4b5cb] mt-1 whitespace-nowrap">
+                      {matchResult.termLength.toLocaleString('en-US')}
+                    </div>
+                    <div className="text-[11px] text-[#6e7e94] mt-1">
+                      Total decimal digits
+                    </div>
+                  </div>
+                </div>
+
+                {/* Complete Mathematical Term Ribbon */}
+                <div className="p-4 sm:p-5 bg-[#080d17] border border-white/[0.08] rounded-xl mb-4 shadow-inner">
+                  <div className="flex flex-wrap justify-between items-center gap-2 text-[10px] uppercase font-mono tracking-wider text-[#7d8fa6] mb-3 pb-2 border-b border-white/[0.06]">
+                    <span className="flex items-center gap-1.5 text-[#9bd3ff] font-semibold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#71b9ff] shadow-[0_0_8px_#71b9ff]" />
+                      Complete Term F({matchResult.n.toLocaleString('en-US')})
+                    </span>
+                    <span className="text-[#a4b5cb]">
+                      {matchResult.termLength.toLocaleString('en-US')} Digits (Full Term) · Found at digit #{matchResult.pos.toLocaleString('en-US')}
+                    </span>
+                  </div>
+
+                  <div className="font-mono text-xs sm:text-[13px] leading-relaxed break-all text-[#99a9bf] select-text tracking-wide whitespace-normal max-h-[320px] overflow-y-auto pr-1">
+                    <span>{matchResult.before}</span>
+                    <mark className="bg-[#1b3a5c] text-[#9bd3ff] border border-[#71b9ff]/70 rounded-md px-1.5 py-0.5 mx-0.5 font-bold shadow-[0_0_12px_rgba(113,185,255,0.4)]">
+                      {matchResult.match}
+                    </mark>
+                    <span>{matchResult.after}</span>
+                  </div>
+                </div>
+
+                {/* Actions Row */}
+                <div className="flex flex-wrap justify-between items-center gap-3 pt-1">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleShare}
+                      disabled={isGeneratingShare}
+                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#f0c978]/25 via-[#71b9ff]/25 to-[#2c83d6]/25 hover:from-[#f0c978]/35 hover:via-[#71b9ff]/35 hover:to-[#2c83d6]/35 border border-[#f0c978]/50 hover:border-[#f0c978]/80 text-[#f0c978] hover:text-white text-xs font-mono transition cursor-pointer flex items-center gap-1.5 shadow-[0_0_18px_rgba(240,201,120,0.2)] active:scale-95 disabled:opacity-50"
+                    >
+                      {isGeneratingShare ? (
+                        <>
+                          <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          <span>Generating Card...</span>
+                        </>
+                      ) : shareCopied ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-[#f0c978]" />
+                          <span className="text-[#f0c978]">Link & Card Ready ✓</span>
+                        </>
+                      ) : (
+                        <>
+                          <Share2 className="w-3.5 h-3.5 text-[#f0c978]" />
+                          <span>Share Result Card</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleClear(true)}
+                      className="px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/10 hover:border-white/20 text-[#8e9cb0] hover:text-white text-xs font-mono transition cursor-pointer flex items-center gap-1.5 active:scale-95"
+                      title="Clear search and scroll back to input bar"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Clear Search</span>
+                    </button>
+                  </div>
+
+                  <span className="text-[11px] text-[#657386] font-mono">
+                    Digits counted starting from index 1.
+                  </span>
+                </div>
+              </>
+            )}
           </section>
         )}
 
