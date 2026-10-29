@@ -1,7 +1,7 @@
 import { FibonacciMatchResult } from '../math/fibonacci';
 
 export const ORIGINAL_HOMEPAGE_URL = 'https://slice-of-fibonacci.vercel.app/';
-export const SHARE_CAPTION = 'Find where your number hides in the Fibonacci Sequence:';
+export const SHARE_CAPTION = 'Every number has a story. Find where yours begins in the Fibonacci sequence.';
 
 export interface GeneratedShareCard {
   canvas: HTMLCanvasElement;
