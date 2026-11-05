@@ -1,20 +1,20 @@
 /**
  * Interstellar Soundtrack Audio Engine
  *
- * Implements an immersive, instant-response background music experience:
- * 1. Page Refresh / Initial Load:
- *    - Always restarts from 00:00 (beginning).
- *    - Attempts autoplay automatically on page entrance.
- *    - If blocked by browser autoplay policy, waits for the user's first genuine interaction
- *      (click, pointerdown, touchstart, keydown) and starts playback from 00:00.
+ * 1. Default State — Playing:
+ *    - Enabled by default (`userPaused = false`).
+ *    - On page load, immediately attempts to start playback from 00:00.
+ *    - If the browser blocks unmuted autoplay, keeps the desired state as Playing and starts
+ *      automatically on the user's first permitted interaction, unless the user explicitly paused.
  *
  * 2. Instant Pause & Play:
  *    - Clicking Pause stops audible playback immediately on the same tick with zero fade-out delay.
- *    - Cancels any active fade intervals or pending play promises so rapid clicks never cause ghost playback.
+ *    - Cancels any active fade intervals, pending play promises, and auto-unlock listeners.
+ *    - Once manually paused, never restarts automatically on subsequent page interactions.
  *
  * 3. Tab Switching (Page Visibility API):
  *    - Pauses immediately when the tab is hidden and resumes from the paused timestamp on return,
- *      unless the user manually paused playback.
+ *      provided the user has not manually paused playback.
  */
 
 export interface MusicState {
@@ -28,9 +28,10 @@ export type MusicStateListener = (state: MusicState) => void;
 class InterstellarAudioEngine {
   private static instance: InterstellarAudioEngine;
   private audio: HTMLAudioElement | null = null;
-  private isPlaying: boolean = false;
+  private isPlaying: boolean = true;
   private userPaused: boolean = false;
   private pausedByVisibility: boolean = false;
+  private awaitingAutoplayUnlock: boolean = false;
   private needsRestartFromStart: boolean = true;
   private targetVolume: number = 0.35;
   private fadeInterval: number | null = null;
@@ -67,8 +68,14 @@ class InterstellarAudioEngine {
     this.createAudioElement();
     this.setupVisibilityListener();
 
+    // Default state is Playing: attempt immediate autoplay on load
     this.playFromStart().catch(() => {
-      this.setupUnlockOnFirstInteraction();
+      if (!this.userPaused) {
+        this.awaitingAutoplayUnlock = true;
+        this.isPlaying = true;
+        this.notify();
+        this.setupUnlockOnFirstInteraction();
+      }
     });
   }
 
@@ -111,13 +118,16 @@ class InterstellarAudioEngine {
           this.notify();
           return;
         }
+        this.awaitingAutoplayUnlock = false;
         this.isPlaying = true;
         this.notify();
       });
 
       this.audio.addEventListener('pause', () => {
-        this.isPlaying = false;
-        this.notify();
+        if (!this.awaitingAutoplayUnlock) {
+          this.isPlaying = false;
+          this.notify();
+        }
       });
 
       this.audio.addEventListener('ended', () => {
@@ -126,6 +136,7 @@ class InterstellarAudioEngine {
       });
 
       this.audio.addEventListener('error', () => {
+        this.awaitingAutoplayUnlock = false;
         this.isPlaying = false;
         this.notify();
       });
@@ -139,7 +150,7 @@ class InterstellarAudioEngine {
 
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
-        if (this.isPlaying && !this.userPaused) {
+        if (!this.userPaused && this.audio && !this.audio.paused) {
           this.pausedByVisibility = true;
           this.pauseImmediately(false);
         }
@@ -158,8 +169,15 @@ class InterstellarAudioEngine {
 
     const activationEvents = ['click', 'pointerdown', 'touchstart', 'keydown'];
 
-    this.unlockHandler = () => {
+    this.unlockHandler = (e: Event) => {
       if (this.userPaused || (typeof document !== 'undefined' && document.hidden)) {
+        this.removeUnlockListeners();
+        return;
+      }
+
+      // If the user clicked directly on the music toggle button, let togglePlayPause handle it cleanly
+      const target = e.target as HTMLElement | null;
+      if (target && typeof target.closest === 'function' && target.closest('[data-music-toggle="true"]')) {
         return;
       }
 
@@ -234,10 +252,9 @@ class InterstellarAudioEngine {
         this.audio.currentTime = 0;
       } catch {}
 
-      this.audio.volume = 0.12;
+      this.audio.volume = 0.14;
       await this.audio.play();
 
-      // If user clicked Pause while play() promise was resolving, stop immediately
       if (actionId !== this.playbackActionId || this.userPaused) {
         this.audio.pause();
         this.isPlaying = false;
@@ -245,14 +262,18 @@ class InterstellarAudioEngine {
         return;
       }
 
+      this.awaitingAutoplayUnlock = false;
       this.needsRestartFromStart = false;
       this.isPlaying = true;
+      this.removeUnlockListeners();
       this.notify();
 
-      this.fadeVolume(this.audio.volume, this.targetVolume, 450);
+      this.fadeVolume(this.audio.volume, this.targetVolume, 400);
     } catch (err) {
-      if (actionId === this.playbackActionId) {
-        this.isPlaying = false;
+      if (actionId === this.playbackActionId && !this.userPaused) {
+        this.awaitingAutoplayUnlock = true;
+        this.isPlaying = true;
+        this.setupUnlockOnFirstInteraction();
         this.notify();
       }
       throw err;
@@ -281,7 +302,9 @@ class InterstellarAudioEngine {
         return;
       }
 
+      this.awaitingAutoplayUnlock = false;
       this.isPlaying = true;
+      this.removeUnlockListeners();
       this.notify();
     } catch (err) {
       if (actionId === this.playbackActionId) {
@@ -298,6 +321,7 @@ class InterstellarAudioEngine {
   public pauseImmediately(isManual: boolean = false): void {
     this.playbackActionId++;
     this.cancelFade();
+    this.awaitingAutoplayUnlock = false;
 
     if (isManual) {
       this.userPaused = true;
@@ -317,15 +341,15 @@ class InterstellarAudioEngine {
   }
 
   public togglePlayPause(): boolean {
-    const isActivelyPlaying =
-      (this.isPlaying || (this.audio !== null && !this.audio.paused)) && !this.userPaused;
+    const currentlyActive = !this.userPaused && (this.isPlaying || this.awaitingAutoplayUnlock);
 
-    if (isActivelyPlaying) {
+    if (currentlyActive) {
       this.pauseImmediately(true);
       return false;
     } else {
       this.userPaused = false;
       this.pausedByVisibility = false;
+      this.isPlaying = true;
       this.notify();
       this.resumePlayback().catch(() => {});
       return true;
@@ -348,7 +372,7 @@ class InterstellarAudioEngine {
   }
 
   public getState(): MusicState {
-    const active = this.isPlaying && !this.userPaused;
+    const active = !this.userPaused && (this.isPlaying || this.awaitingAutoplayUnlock);
     return {
       isPlaying: active,
       isPaused: !active,
@@ -357,10 +381,11 @@ class InterstellarAudioEngine {
   }
 
   public getIsPlaying(): boolean {
-    return this.isPlaying && !this.userPaused;
+    return !this.userPaused && (this.isPlaying || this.awaitingAutoplayUnlock);
   }
 
   public playInterstellar(resetToStart: boolean = false): Promise<void> {
+    if (this.userPaused) return Promise.resolve();
     if (resetToStart || this.needsRestartFromStart) {
       return this.playFromStart();
     }

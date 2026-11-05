@@ -750,6 +750,10 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
 
     const animate = () => {
       animId = requestAnimationFrame(animate);
+      if (typeof document !== 'undefined' && document.hidden && !stateRef.current.needsSequenceRebuild) {
+        clock.getDelta();
+        return;
+      }
       const delta = Math.min(clock.getDelta(), 0.1);
       const time = clock.getElapsedTime();
 

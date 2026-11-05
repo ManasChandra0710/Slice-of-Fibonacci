@@ -25,7 +25,11 @@ import {
   X,
   RotateCcw,
   AlertCircle,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
+
+const PREVIEW_CONTEXT_DIGITS = 20;
 
 /**
  * Extracts searched number from current URL path (/13, /144, /07102007).
@@ -78,6 +82,7 @@ export default function App() {
   const [searchProgress, setSearchProgress] = useState<number | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [matchResult, setMatchResult] = useState<FibonacciMatchResult | null>(null);
+  const [isFullTermExpanded, setIsFullTermExpanded] = useState(false);
   const [isWhatsThisOpen, setIsWhatsThisOpen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(soundEngine.getIsPlaying());
   const [shareCopied, setShareCopied] = useState(false);
@@ -89,14 +94,20 @@ export default function App() {
   const inputRef = useRef<HTMLInputElement>(null);
   const swirlSectionRef = useRef<HTMLElement>(null);
   const resultRef = useRef<HTMLElement>(null);
+  const focusTimeoutRef = useRef<number | null>(null);
 
   // Track active search request ID to prevent stale/duplicate results
   const activeSearchReqRef = useRef(0);
   const pendingScrollToSwirlRef = useRef(false);
 
-  // Restart background music from 00:00 on page refresh/initial load
+  // Attempt to start background music automatically on load (Playing by default)
   useEffect(() => {
-    soundEngine.playInterstellar(true).catch(() => {});
+    soundEngine.playInterstellar(false).catch(() => {});
+    return () => {
+      if (focusTimeoutRef.current !== null) {
+        window.clearTimeout(focusTimeoutRef.current);
+      }
+    };
   }, []);
 
   // Subscribe to background music state
@@ -138,11 +149,16 @@ export default function App() {
   const handleClear = (scrollToInput: boolean = true) => {
     activeSearchReqRef.current++;
     pendingScrollToSwirlRef.current = false;
+    if (focusTimeoutRef.current !== null) {
+      window.clearTimeout(focusTimeoutRef.current);
+      focusTimeoutRef.current = null;
+    }
     cancelCurrentSearch();
     setIsSearching(false);
     setInputValue('');
     setPreviewQuery('');
     setMatchResult(null);
+    setIsFullTermExpanded(false);
     setSearchError(null);
     setSearchProgress(null);
     setShareCard(null);
@@ -161,9 +177,10 @@ export default function App() {
       } else if (typeof window !== 'undefined') {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
-      setTimeout(() => {
+      focusTimeoutRef.current = window.setTimeout(() => {
         inputRef.current?.focus({ preventScroll: true });
-      }, 320);
+        focusTimeoutRef.current = null;
+      }, 300);
     }
   };
 
@@ -177,9 +194,14 @@ export default function App() {
 
     const reqId = ++activeSearchReqRef.current;
     pendingScrollToSwirlRef.current = false;
+    if (focusTimeoutRef.current !== null) {
+      window.clearTimeout(focusTimeoutRef.current);
+      focusTimeoutRef.current = null;
+    }
 
     setInputValue(clean);
     setIsSearching(true);
+    setIsFullTermExpanded(false);
     setSearchError(null);
     setSearchProgress(0);
     setPreviewQuery(clean);
@@ -205,6 +227,7 @@ export default function App() {
       if (activeSearchReqRef.current !== reqId) return;
 
       pendingScrollToSwirlRef.current = true;
+      setIsFullTermExpanded(false);
       setMatchResult(res);
       setSearchError(null);
       setSearchProgress(null);
@@ -256,6 +279,7 @@ export default function App() {
         setInputValue('');
         setPreviewQuery('');
         setMatchResult(null);
+        setIsFullTermExpanded(false);
         setSearchError(null);
         setSearchProgress(null);
         if (typeof document !== 'undefined') {
@@ -358,14 +382,40 @@ export default function App() {
     soundEngine.togglePlayPause();
   };
 
+  // Compact sequence preview data + lazy-chunked full term data
+  const sequencePreviewData = useMemo(() => {
+    if (!matchResult) return null;
+    const hasOmittedBefore = matchResult.before.length > PREVIEW_CONTEXT_DIGITS;
+    const hasOmittedAfter = matchResult.after.length > PREVIEW_CONTEXT_DIGITS;
+    const previewBefore = hasOmittedBefore
+      ? matchResult.before.slice(-PREVIEW_CONTEXT_DIGITS)
+      : matchResult.before;
+    const previewAfter = hasOmittedAfter
+      ? matchResult.after.slice(0, PREVIEW_CONTEXT_DIGITS)
+      : matchResult.after;
+
+    return {
+      hasOmittedBefore,
+      hasOmittedAfter,
+      previewBefore,
+      previewAfter,
+    };
+  }, [matchResult]);
+
   const beforeChunks = useMemo(
-    () => (matchResult ? splitIntoReadableChunks(matchResult.before, 400) : []),
-    [matchResult]
+    () =>
+      matchResult && isFullTermExpanded
+        ? splitIntoReadableChunks(matchResult.before, 400)
+        : [],
+    [matchResult, isFullTermExpanded]
   );
 
   const afterChunks = useMemo(
-    () => (matchResult ? splitIntoReadableChunks(matchResult.after, 400) : []),
-    [matchResult]
+    () =>
+      matchResult && isFullTermExpanded
+        ? splitIntoReadableChunks(matchResult.after, 400)
+        : [],
+    [matchResult, isFullTermExpanded]
   );
 
   const showResultSection = isSearching || Boolean(matchResult) || Boolean(searchError);
@@ -396,7 +446,10 @@ export default function App() {
 
         <div className="flex items-center gap-2 sm:gap-3">
           {/* Instant-Response Interstellar Music Control */}
-          <div className="flex items-center gap-2 p-1.5 pl-2.5 pr-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 hover:border-[#71b9ff]/40 transition duration-300 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.35)]">
+          <div
+            data-music-toggle="true"
+            className="flex items-center gap-2 p-1.5 pl-2.5 pr-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 hover:border-[#71b9ff]/40 transition duration-300 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.35)]"
+          >
             <button
               type="button"
               onClick={handleToggleSound}
@@ -695,28 +748,84 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Complete Mathematical Term Ribbon — Readable Typography, Natural Wrapping, Full Term Displayed */}
-                <div className="p-5 sm:p-6 bg-[#050913] border border-[#71b9ff]/18 rounded-xl mb-5 shadow-inner max-w-full overflow-hidden">
+                {/* Smart Sequence Preview & Expandable Complete Term Display */}
+                <div className="p-5 sm:p-6 bg-[#050913] border border-[#71b9ff]/18 rounded-xl mb-5 shadow-inner max-w-full overflow-hidden transition-all duration-300">
                   <div className="flex flex-wrap justify-between items-center gap-2 text-[11px] uppercase font-mono tracking-wider text-[#7d8fa6] mb-3.5 pb-2.5 border-b border-white/[0.07]">
                     <span className="flex items-center gap-1.5 text-[#9bd3ff] font-semibold">
                       <span className="w-1.5 h-1.5 rounded-full bg-[#71b9ff] shadow-[0_0_8px_#71b9ff]" />
-                      Complete Term F({matchResult.n.toLocaleString('en-US')})
+                      {isFullTermExpanded
+                        ? `Complete Term F(${matchResult.n.toLocaleString('en-US')})`
+                        : `Sequence Preview in F(${matchResult.n.toLocaleString('en-US')})`}
                     </span>
                     <span className="text-[#a4b5cb]">
-                      {matchResult.termLength.toLocaleString('en-US')} Digits
+                      {matchResult.termLength.toLocaleString('en-US')}{' '}
+                      {matchResult.termLength === 1 ? 'Digit' : 'Digits'}
                     </span>
                   </div>
 
-                  <div className="font-mono tabular-nums text-sm sm:text-[15px] leading-[1.88] tracking-[0.055em] break-all text-[#b0c0d6] select-text whitespace-normal max-w-full">
-                    {beforeChunks.map((chunk, i) => (
-                      <span key={`b-${i}`}>{chunk}</span>
-                    ))}
-                    <mark className="bg-[#16355b] text-white border border-[#71b9ff] rounded-md px-2 py-0.5 mx-1 font-bold shadow-[0_0_16px_rgba(113,185,255,0.5)]">
-                      {matchResult.match}
-                    </mark>
-                    {afterChunks.map((chunk, i) => (
-                      <span key={`a-${i}`}>{chunk}</span>
-                    ))}
+                  {!isFullTermExpanded && sequencePreviewData ? (
+                    <div className="font-mono tabular-nums text-sm sm:text-[16px] leading-[1.9] tracking-[0.06em] break-all text-[#b0c0d6] select-text whitespace-normal max-w-full py-1">
+                      {sequencePreviewData.hasOmittedBefore && (
+                        <span className="text-[#647894] select-none mr-1.5">… </span>
+                      )}
+                      {sequencePreviewData.previewBefore && (
+                        <span>{sequencePreviewData.previewBefore} </span>
+                      )}
+                      <mark className="bg-[#16355b] text-white border border-[#71b9ff] rounded-md px-2.5 py-0.5 mx-1 font-bold shadow-[0_0_16px_rgba(113,185,255,0.5)]">
+                        {matchResult.match}
+                      </mark>
+                      {sequencePreviewData.previewAfter && (
+                        <span> {sequencePreviewData.previewAfter}</span>
+                      )}
+                      {sequencePreviewData.hasOmittedAfter && (
+                        <span className="text-[#647894] select-none ml-1.5"> …</span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="font-mono tabular-nums text-sm sm:text-[15px] leading-[1.88] tracking-[0.055em] break-all text-[#b0c0d6] select-text whitespace-normal max-w-full animate-rise">
+                      {beforeChunks.map((chunk, i) => (
+                        <span key={`b-${i}`}>{chunk}</span>
+                      ))}
+                      <mark className="bg-[#16355b] text-white border border-[#71b9ff] rounded-md px-2 py-0.5 mx-1 font-bold shadow-[0_0_16px_rgba(113,185,255,0.5)]">
+                        {matchResult.match}
+                      </mark>
+                      {afterChunks.map((chunk, i) => (
+                        <span key={`a-${i}`}>{chunk}</span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* "View Complete Term" / "Show Less" Control */}
+                  <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsFullTermExpanded((prev) => !prev)}
+                      aria-expanded={isFullTermExpanded}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#71b9ff]/10 hover:bg-[#71b9ff]/20 border border-[#71b9ff]/35 hover:border-[#71b9ff]/75 text-[#71b9ff] hover:text-white text-xs font-mono font-medium transition-all duration-200 cursor-pointer shadow-[0_0_14px_rgba(113,185,255,0.14)] hover:shadow-[0_0_20px_rgba(113,185,255,0.3)] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#71b9ff]"
+                    >
+                      {isFullTermExpanded ? (
+                        <>
+                          <span>Show Less</span>
+                          <ChevronUp className="w-3.5 h-3.5" />
+                        </>
+                      ) : (
+                        <>
+                          <span>View Complete Term</span>
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        </>
+                      )}
+                    </button>
+
+                    {!isFullTermExpanded &&
+                      sequencePreviewData &&
+                      (sequencePreviewData.hasOmittedBefore ||
+                        sequencePreviewData.hasOmittedAfter) && (
+                        <span className="text-[11px] font-mono text-[#6e829c]">
+                          Showing surrounding context ·{' '}
+                          {matchResult.termLength.toLocaleString('en-US')} total digits in F(
+                          {matchResult.n.toLocaleString('en-US')})
+                        </span>
+                      )}
                   </div>
                 </div>
 
@@ -764,17 +873,24 @@ export default function App() {
         )}
       </main>
 
-      {/* Bottom Footer Control */}
-      <footer className="flex justify-between items-center gap-3 mt-12 pt-4 border-t border-white/[0.06] text-[#5d6c80] text-[11px] tracking-wider font-mono uppercase">
-        <span>F(n) = F(n−1) + F(n−2)</span>
+      {/* Highlighted Bottom Header (Footer) Control */}
+      <footer className="flex flex-wrap justify-between items-center gap-3 mt-12 pt-5 border-t border-[#71b9ff]/20 text-xs tracking-wider font-mono uppercase">
+        <div className="inline-flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-[#071021]/80 border border-[#71b9ff]/25 text-[#9bd3ff] shadow-[0_0_18px_rgba(113,185,255,0.12)]">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#71b9ff] shadow-[0_0_8px_#71b9ff]" />
+          <span className="tracking-[0.12em] font-semibold drop-shadow-[0_0_10px_rgba(113,185,255,0.35)]">
+            F(n) = F(n−1) + F(n−2)
+          </span>
+        </div>
+
         <button
           type="button"
           onClick={() => setIsWhatsThisOpen((prev) => !prev)}
           aria-expanded={isWhatsThisOpen}
           aria-controls="whats-this-modal"
-          className="border-0 bg-transparent text-[#8298b4] hover:text-[#71b9ff] cursor-pointer font-inherit tracking-inherit uppercase transition"
+          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-[#71b9ff]/12 hover:bg-[#71b9ff]/22 border border-[#71b9ff]/40 hover:border-[#71b9ff]/85 text-[#9bd3ff] hover:text-white cursor-pointer font-mono font-semibold text-xs tracking-[0.12em] uppercase transition-all duration-200 shadow-[0_0_16px_rgba(113,185,255,0.18)] hover:shadow-[0_0_24px_rgba(113,185,255,0.4)] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#71b9ff]"
         >
-          {isWhatsThisOpen ? 'Close What’s this? ×' : 'What’s this?'}
+          <span className="w-1.5 h-1.5 rounded-full bg-[#71b9ff] shadow-[0_0_8px_#71b9ff]" />
+          <span>{isWhatsThisOpen ? 'Close What’s this? ×' : 'What’s this?'}</span>
         </button>
       </footer>
 
