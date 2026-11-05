@@ -1,4 +1,4 @@
-import { FibonacciMatchResult } from '../math/fibonacci';
+import { FibonacciMatchResult, GOLDEN_ANGLE, INV_PHI } from '../math/fibonacci';
 
 export const ORIGINAL_HOMEPAGE_URL = 'https://slice-of-fibonacci.vercel.app/';
 export const SHARE_CAPTION =
@@ -26,10 +26,9 @@ function hexToRgba(hex: string, alpha: number = 1): string {
 }
 
 /**
- * Generates a high-resolution 1080x1350 Share Result Card:
- * - Primary layout, Golden-Angle Phyllotaxis Orb Disc, typography, and footer from Reference Image 1
- * - 4-Card Result Metrics row (FIBONACCI TERM, POSITION IN TERM, STREAM POSITION, TERM LENGTH) from Reference Image 2
- * - Continuous Fibonacci Stream with electric-blue highlighted match matching the website's highlight style
+ * Generates a high-resolution 1080x1350 Share Result Card styled with the
+ * extracted reference color palette (deep obsidian #010308, sapphire #0d2244,
+ * electric azure #4da3ff, luminous sky #6cb6ff, and ice-blue #b8dcff).
  */
 export async function generateShareCard(
   result: FibonacciMatchResult
@@ -45,7 +44,7 @@ export async function generateShareCard(
     throw new Error('Canvas 2D context is unavailable');
   }
 
-  // --- 1. Background Cosmic Dark Theme (Reference Image 1) ---
+  // --- 1. Background Deep Obsidian-Azure Atmosphere ---
   const bgGrad = ctx.createRadialGradient(
     width / 2,
     300,
@@ -54,30 +53,30 @@ export async function generateShareCard(
     height / 2,
     height * 0.75
   );
-  bgGrad.addColorStop(0, '#0c1527');
-  bgGrad.addColorStop(0.45, '#070c17');
-  bgGrad.addColorStop(1, '#03050a');
+  bgGrad.addColorStop(0, '#081226');
+  bgGrad.addColorStop(0.45, '#040914');
+  bgGrad.addColorStop(1, '#010308');
   ctx.fillStyle = bgGrad;
   ctx.fillRect(0, 0, width, height);
 
-  // Soft atmospheric glows
-  const topGlow = ctx.createRadialGradient(width / 2, 280, 20, width / 2, 280, 300);
-  topGlow.addColorStop(0, 'rgba(113, 185, 255, 0.16)');
-  topGlow.addColorStop(0.5, 'rgba(240, 201, 120, 0.08)');
+  // Soft atmospheric azure glow
+  const topGlow = ctx.createRadialGradient(width / 2, 280, 20, width / 2, 280, 310);
+  topGlow.addColorStop(0, 'rgba(77, 163, 255, 0.20)');
+  topGlow.addColorStop(0.5, 'rgba(108, 182, 255, 0.08)');
   topGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
   ctx.fillStyle = topGlow;
   ctx.fillRect(0, 0, width, 600);
 
-  // Delicate decorative borders
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+  // Delicate double frame borders
+  ctx.strokeStyle = 'rgba(184, 220, 255, 0.08)';
   ctx.lineWidth = 1.5;
   ctx.strokeRect(36, 36, width - 72, height - 72);
 
-  ctx.strokeStyle = 'rgba(240, 201, 120, 0.25)';
+  ctx.strokeStyle = 'rgba(77, 163, 255, 0.24)';
   ctx.lineWidth = 1;
   ctx.strokeRect(44, 44, width - 88, height - 88);
 
-  // --- 2. Top Visual: Golden-Angle Vogel Phyllotaxis Orb Disc (Reference Image 1) ---
+  // --- 2. Top Visual: Golden-Angle Phyllotaxis Orb Disc ---
   const discCenterX = width / 2;
   const discCenterY = 275;
   const discRadius = 195;
@@ -90,30 +89,30 @@ export async function generateShareCard(
     discCenterY,
     discRadius + 28
   );
-  nebulaGlow.addColorStop(0, 'rgba(113, 185, 255, 0.24)');
-  nebulaGlow.addColorStop(0.28, 'rgba(20, 38, 72, 0.92)');
-  nebulaGlow.addColorStop(0.68, 'rgba(8, 14, 26, 0.78)');
-  nebulaGlow.addColorStop(1, 'rgba(3, 5, 10, 0)');
+  nebulaGlow.addColorStop(0, 'rgba(77, 163, 255, 0.26)');
+  nebulaGlow.addColorStop(0.28, 'rgba(15, 34, 68, 0.92)');
+  nebulaGlow.addColorStop(0.68, 'rgba(5, 11, 24, 0.80)');
+  nebulaGlow.addColorStop(1, 'rgba(1, 3, 8, 0)');
   ctx.fillStyle = nebulaGlow;
   ctx.beginPath();
   ctx.arc(discCenterX, discCenterY, discRadius + 28, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.save();
-  ctx.strokeStyle = 'rgba(240, 201, 120, 0.16)';
+  ctx.strokeStyle = 'rgba(108, 182, 255, 0.18)';
   ctx.lineWidth = 1;
   ctx.setLineDash([4, 6]);
   ctx.beginPath();
   ctx.arc(discCenterX, discCenterY, discRadius, 0, Math.PI * 2);
   ctx.stroke();
 
-  ctx.strokeStyle = 'rgba(113, 185, 255, 0.18)';
+  ctx.strokeStyle = 'rgba(77, 163, 255, 0.20)';
   ctx.setLineDash([2, 5]);
   ctx.beginPath();
-  ctx.arc(discCenterX, discCenterY, discRadius * 0.6180339887, 0, Math.PI * 2);
+  ctx.arc(discCenterX, discCenterY, discRadius * INV_PHI, 0, Math.PI * 2);
   ctx.stroke();
 
-  ctx.strokeStyle = 'rgba(240, 201, 120, 0.22)';
+  ctx.strokeStyle = 'rgba(184, 220, 255, 0.24)';
   ctx.setLineDash([2, 4]);
   ctx.beginPath();
   ctx.arc(discCenterX, discCenterY, 54, 0, Math.PI * 2);
@@ -129,30 +128,29 @@ export async function generateShareCard(
     discCenterY,
     78
   );
-  centerAura.addColorStop(0, 'rgba(255, 245, 210, 0.48)');
-  centerAura.addColorStop(0.32, 'rgba(240, 201, 120, 0.22)');
-  centerAura.addColorStop(0.65, 'rgba(113, 185, 255, 0.16)');
-  centerAura.addColorStop(1, 'rgba(8, 14, 26, 0)');
+  centerAura.addColorStop(0, 'rgba(216, 236, 255, 0.46)');
+  centerAura.addColorStop(0.35, 'rgba(108, 182, 255, 0.24)');
+  centerAura.addColorStop(0.68, 'rgba(77, 163, 255, 0.14)');
+  centerAura.addColorStop(1, 'rgba(5, 11, 24, 0)');
   ctx.fillStyle = centerAura;
   ctx.beginPath();
   ctx.arc(discCenterX, discCenterY, 78, 0, Math.PI * 2);
   ctx.fill();
 
   // 520 Golden-Angle Phyllotaxis 3D Shaded Orbs (137.507764° divergence)
-  const goldenAngleRad = 137.50776405 * (Math.PI / 180);
   const totalOrbs = 520;
   const minOrbDist = 25;
   const maxOrbDist = discRadius - 7;
 
   for (let i = 1; i <= totalOrbs; i++) {
     const norm = i / totalOrbs;
-    const angle = i * goldenAngleRad;
+    const angle = i * GOLDEN_ANGLE;
     const dist = minOrbDist + Math.sqrt(norm) * (maxOrbDist - minOrbDist);
     const ox = discCenterX + Math.cos(angle) * dist;
     const oy = discCenterY + Math.sin(angle) * dist;
 
     const orbR = 1.9 + Math.pow(norm, 0.46) * 3.15;
-    const isGold =
+    const isBrightIce =
       (norm < 0.13 && i % 3 === 0) ||
       i % 8 === 0 ||
       (i % 13 === 0 && norm > 0.25);
@@ -170,14 +168,14 @@ export async function generateShareCard(
       orbR
     );
 
-    if (isGold) {
+    if (isBrightIce) {
       orbGrad.addColorStop(0, '#ffffff');
-      orbGrad.addColorStop(0.45, '#f0c978');
-      orbGrad.addColorStop(1, hexToRgba('#c58f32', 0.88));
+      orbGrad.addColorStop(0.45, '#b8dcff');
+      orbGrad.addColorStop(1, hexToRgba('#4da3ff', 0.90));
     } else {
       orbGrad.addColorStop(0, '#d8ecff');
-      orbGrad.addColorStop(0.48, '#5caeff');
-      orbGrad.addColorStop(1, hexToRgba('#1b58a8', 0.9));
+      orbGrad.addColorStop(0.48, '#4da3ff');
+      orbGrad.addColorStop(1, hexToRgba('#16488a', 0.92));
     }
 
     ctx.fillStyle = orbGrad;
@@ -187,7 +185,7 @@ export async function generateShareCard(
 
   // Luminous Central Singularity Orb & Halo Ring
   ctx.save();
-  ctx.strokeStyle = 'rgba(240, 201, 120, 0.45)';
+  ctx.strokeStyle = 'rgba(184, 220, 255, 0.45)';
   ctx.lineWidth = 1.2;
   ctx.beginPath();
   ctx.arc(discCenterX, discCenterY, 19, 0, Math.PI * 2);
@@ -202,9 +200,9 @@ export async function generateShareCard(
     24
   );
   coreOuterGlow.addColorStop(0, '#ffffff');
-  coreOuterGlow.addColorStop(0.38, 'rgba(240, 201, 120, 0.92)');
-  coreOuterGlow.addColorStop(0.72, 'rgba(113, 185, 255, 0.45)');
-  coreOuterGlow.addColorStop(1, 'rgba(7, 12, 24, 0)');
+  coreOuterGlow.addColorStop(0.38, 'rgba(184, 220, 255, 0.92)');
+  coreOuterGlow.addColorStop(0.72, 'rgba(77, 163, 255, 0.48)');
+  coreOuterGlow.addColorStop(1, 'rgba(5, 11, 24, 0)');
   ctx.fillStyle = coreOuterGlow;
   ctx.beginPath();
   ctx.arc(discCenterX, discCenterY, 24, 0, Math.PI * 2);
@@ -219,11 +217,11 @@ export async function generateShareCard(
     12.5
   );
   coreSphereGrad.addColorStop(0, '#ffffff');
-  coreSphereGrad.addColorStop(0.55, '#fff0c2');
-  coreSphereGrad.addColorStop(0.85, '#f0c978');
-  coreSphereGrad.addColorStop(1, '#71b9ff');
+  coreSphereGrad.addColorStop(0.55, '#e2f1ff');
+  coreSphereGrad.addColorStop(0.85, '#6cb6ff');
+  coreSphereGrad.addColorStop(1, '#3b82f6');
   ctx.fillStyle = coreSphereGrad;
-  ctx.shadowColor = 'rgba(240, 201, 120, 0.9)';
+  ctx.shadowColor = 'rgba(108, 182, 255, 0.9)';
   ctx.shadowBlur = 14;
   ctx.beginPath();
   ctx.arc(discCenterX, discCenterY, 12.5, 0, Math.PI * 2);
@@ -234,9 +232,9 @@ export async function generateShareCard(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  ctx.fillStyle = '#f0c978';
+  ctx.fillStyle = '#6cb6ff';
   ctx.font = '600 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.shadowColor = 'rgba(240, 201, 120, 0.4)';
+  ctx.shadowColor = 'rgba(77, 163, 255, 0.45)';
   ctx.shadowBlur = 12;
   ctx.fillText('S L I C E   O F   F I B O N A C C I', width / 2, 530);
   ctx.shadowBlur = 0;
@@ -255,15 +253,15 @@ export async function generateShareCard(
     measured = ctx.measureText(queryStr).width;
   }
 
-  ctx.fillStyle = '#ffffff';
-  ctx.shadowColor = 'rgba(113, 185, 255, 0.6)';
+  ctx.fillStyle = '#f4f7fb';
+  ctx.shadowColor = 'rgba(77, 163, 255, 0.65)';
   ctx.shadowBlur = 24;
   ctx.fillText(queryStr, width / 2, 625);
   ctx.shadowBlur = 0;
 
   // --- 5. Main Ordinal Subtitle ---
   const ordinalStr = `${result.streamPos.toLocaleString('en-US')}${getOrdinalSuffix(result.streamPos)}`;
-  ctx.fillStyle = '#c0d4ec';
+  ctx.fillStyle = '#8594a8';
   ctx.font = '400 28px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   ctx.fillText(
     `the ${ordinalStr} digit of the continuous Fibonacci stream`,
@@ -271,14 +269,13 @@ export async function generateShareCard(
     705
   );
 
-  // --- 6. 4 Metric Cards Row (Replaced with Content & Visual Presentation from Reference Image 2) ---
+  // --- 6. 4 Metric Cards Row ---
   const cardY = 762;
   const cardHeight = 132;
   const totalRowWidth = 900;
   const startX = (width - totalRowWidth) / 2;
   const spacing = 16;
 
-  // Proportional card widths matching Reference Image 2 (expanded Stream Position width)
   const cardSpecs = [
     {
       width: 204,
@@ -313,8 +310,8 @@ export async function generateShareCard(
     currentCardX += w + spacing;
 
     ctx.save();
-    ctx.fillStyle = 'rgba(13, 20, 34, 0.82)';
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.fillStyle = 'rgba(7, 13, 25, 0.88)';
+    ctx.strokeStyle = 'rgba(77, 163, 255, 0.16)';
     ctx.lineWidth = 1.2;
 
     ctx.beginPath();
@@ -323,7 +320,7 @@ export async function generateShareCard(
     ctx.stroke();
 
     // Top inner rim highlight
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.strokeStyle = 'rgba(184, 220, 255, 0.12)';
     ctx.beginPath();
     ctx.moveTo(x + 18, cardY);
     ctx.lineTo(x + w - 18, cardY);
@@ -333,13 +330,11 @@ export async function generateShareCard(
     const padX = 20;
     ctx.textAlign = 'left';
 
-    // Uppercase mono title (#7d8fa6)
-    ctx.fillStyle = '#7d8fa6';
+    ctx.fillStyle = '#5c6c82';
     ctx.font = '600 12px ui-monospace, SFMono-Regular, Menlo, monospace';
     ctx.fillText(cd.title, x + padX, cardY + 30);
 
-    // Unified electric-blue value (#71b9ff) matching Reference Image 2
-    ctx.fillStyle = '#71b9ff';
+    ctx.fillStyle = '#6cb6ff';
     let valFontSize = 31;
     ctx.font = `bold ${valFontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
     while (ctx.measureText(cd.value).width > w - padX * 2 && valFontSize > 16) {
@@ -348,27 +343,26 @@ export async function generateShareCard(
     }
     ctx.fillText(cd.value, x + padX, cardY + 72);
 
-    // Sub-caption (#6e7e94)
-    ctx.fillStyle = '#6e7e94';
+    ctx.fillStyle = '#68788e';
     ctx.font = '400 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.fillText(cd.sub, x + padX, cardY + 106);
   });
 
-  // --- 7. Continuous Fibonacci Stream Visual Ribbon (Highlighted in Website Electric Blue) ---
+  // --- 7. Continuous Fibonacci Stream Visual Ribbon ---
   const ribbonY = 930;
   const ribbonHeight = 150;
   const ribbonWidth = totalRowWidth;
   const ribbonX = startX;
 
-  ctx.fillStyle = 'rgba(8, 13, 24, 0.85)';
-  ctx.strokeStyle = 'rgba(113, 185, 255, 0.22)';
+  ctx.fillStyle = 'rgba(6, 12, 24, 0.90)';
+  ctx.strokeStyle = 'rgba(77, 163, 255, 0.24)';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.roundRect(ribbonX, ribbonY, ribbonWidth, ribbonHeight, 20);
   ctx.fill();
   ctx.stroke();
 
-  ctx.fillStyle = '#8ea1b8';
+  ctx.fillStyle = '#8594a8';
   ctx.font = '600 14px ui-monospace, SFMono-Regular, monospace';
   ctx.textAlign = 'center';
   ctx.fillText(
@@ -408,7 +402,7 @@ export async function generateShareCard(
   const centerY = ribbonY + 95;
 
   // Surrounding digits (left)
-  ctx.fillStyle = '#7a8c9e';
+  ctx.fillStyle = '#68788e';
   ctx.font = `500 ${streamFontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
   ctx.textAlign = 'left';
   ctx.fillText(snippetBefore, streamStartX, centerY);
@@ -416,61 +410,99 @@ export async function generateShareCard(
   const pillX = streamStartX + beforeWidth + streamGap;
   const pillY = centerY - pillHeight / 2;
 
-  // Electric-Blue Highlight Pill matching the website's highlight color & glow
+  // Electric-Azure Highlight Pill
   ctx.save();
   const pillGrad = ctx.createLinearGradient(pillX, pillY, pillX + pillWidth, pillY + pillHeight);
-  pillGrad.addColorStop(0, '#1b3d69');
-  pillGrad.addColorStop(1, '#122b4d');
+  pillGrad.addColorStop(0, '#163868');
+  pillGrad.addColorStop(1, '#0e2547');
   ctx.fillStyle = pillGrad;
-  ctx.shadowColor = 'rgba(113, 185, 255, 0.65)';
+  ctx.shadowColor = 'rgba(77, 163, 255, 0.65)';
   ctx.shadowBlur = 20;
   ctx.beginPath();
   ctx.roundRect(pillX, pillY, pillWidth, pillHeight, 12);
   ctx.fill();
 
-  ctx.strokeStyle = '#71b9ff';
+  ctx.strokeStyle = '#4da3ff';
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  ctx.fillStyle = '#9bd3ff';
+  ctx.fillStyle = '#b8dcff';
   ctx.font = `bold ${Math.max(16, streamFontSize + 2)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
   ctx.textAlign = 'center';
-  ctx.shadowColor = 'rgba(113, 185, 255, 0.5)';
+  ctx.shadowColor = 'rgba(77, 163, 255, 0.55)';
   ctx.shadowBlur = 8;
   ctx.fillText(result.match, pillX + pillWidth / 2, centerY);
   ctx.restore();
 
   // Surrounding digits (right)
-  ctx.fillStyle = '#7a8c9e';
+  ctx.fillStyle = '#68788e';
   ctx.font = `500 ${streamFontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
   ctx.textAlign = 'left';
   ctx.fillText(snippetAfter, pillX + pillWidth + streamGap, centerY);
 
-  // --- 8. Footer & Website Link (Reference Image 1) ---
+  // --- 8. Footer & Website Link ---
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#9eb2c9';
+  ctx.fillStyle = '#8594a8';
   ctx.font = '500 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   ctx.fillText(SHARE_CAPTION, width / 2, 1165);
 
-  ctx.fillStyle = '#f0c978';
+  ctx.fillStyle = '#6cb6ff';
   ctx.font = 'bold 26px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.shadowColor = 'rgba(240, 201, 120, 0.45)';
+  ctx.shadowColor = 'rgba(77, 163, 255, 0.45)';
   ctx.shadowBlur = 12;
   ctx.fillText(ORIGINAL_HOMEPAGE_URL, width / 2, 1210);
   ctx.shadowBlur = 0;
 
-  // Mini Golden Spiral Emblem Icon at the very bottom
+  // Refined Glassmorphic Brand Mark Emblem at the bottom of the Share Card
   const iconY = 1265;
-  ctx.strokeStyle = 'rgba(240, 201, 120, 0.4)';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.arc(width / 2, iconY, 12, 0, Math.PI * 2);
-  ctx.stroke();
+  const logoRadius = 18;
+  let drewLogoImage = false;
+  try {
+    const logoImg = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = '/logo.png';
+    });
+    ctx.save();
+    ctx.shadowColor = 'rgba(77, 163, 255, 0.48)';
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.arc(width / 2, iconY, logoRadius, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(
+      logoImg,
+      width / 2 - logoRadius,
+      iconY - logoRadius,
+      logoRadius * 2,
+      logoRadius * 2
+    );
+    ctx.restore();
 
-  ctx.fillStyle = '#71b9ff';
-  ctx.beginPath();
-  ctx.arc(width / 2, iconY, 4, 0, Math.PI * 2);
-  ctx.fill();
+    ctx.strokeStyle = 'rgba(184, 220, 255, 0.55)';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(width / 2, iconY, logoRadius, 0, Math.PI * 2);
+    ctx.stroke();
+    drewLogoImage = true;
+  } catch {
+    drewLogoImage = false;
+  }
+
+  if (!drewLogoImage) {
+    ctx.strokeStyle = 'rgba(108, 182, 255, 0.45)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(width / 2, iconY, 12, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = '#4da3ff';
+    ctx.beginPath();
+    ctx.arc(width / 2, iconY, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   // --- 9. Export to Blob and File ---
   const dataUrl = canvas.toDataURL('image/png');

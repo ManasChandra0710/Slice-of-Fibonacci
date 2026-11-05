@@ -5,7 +5,10 @@ import {
   generateSpiralData,
   buildSpiralSequenceAllocation,
   MAX_SPIRAL_ORBS,
+  SPIRAL_CURVE_SEGMENTS,
   DIGIT_RULES,
+  PHI,
+  INV_PHI,
   FibonacciMatchResult,
 } from '../math/fibonacci';
 import { ZoomIn, ZoomOut, RotateCcw, Move, Compass } from 'lucide-react';
@@ -16,7 +19,7 @@ interface FibonacciCanvasProps {
   onSequenceReady?: () => void;
 }
 
-// Pre-allocated math objects to guarantee ZERO GC allocations in render loop
+// Pre-allocated math objects to guarantee ZERO GC allocations in the render loop
 const _vec3 = new THREE.Vector3();
 const _scaleVec = new THREE.Vector3();
 const _matrix = new THREE.Matrix4();
@@ -25,12 +28,13 @@ const _color = new THREE.Color();
 const _camRight = new THREE.Vector3();
 const _camUp = new THREE.Vector3();
 
-const DEFAULT_ORBIT_ANGLES = { theta: 0.4, phi: 1.18, radius: 42 };
+// Default camera framed to showcase the upward-rising Golden Ratio Tornado silhouette
+const DEFAULT_ORBIT_ANGLES = { theta: 0.45, phi: 1.25, radius: 24.5 };
 
 function computeFrontFacingCameraRadius(matchLen: number, aspect: number): number {
-  const baseRadius = 9.2 + Math.max(1, matchLen) * 1.15;
-  const aspectFactor = aspect < 1.2 ? Math.min(1.5, 1.15 / Math.max(0.55, aspect)) : 1.0;
-  return Math.min(32, Math.max(10.5, baseRadius * aspectFactor));
+  const baseRadius = 7.8 + Math.max(1, matchLen) * (INV_PHI * 1.45);
+  const aspectFactor = aspect < 1.2 ? Math.min(1.45, 1.12 / Math.max(0.55, aspect)) : 1.0;
+  return Math.min(24, Math.max(8.8, baseRadius * aspectFactor));
 }
 
 export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
@@ -63,20 +67,22 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     shockwaveProgress: 1.0,
     needsSequenceRebuild: true,
     notifyReadyAfterRebuild: false,
-    activeOrbCount: 1000,
+    activeOrbCount: MAX_SPIRAL_ORBS,
     matchStartIdx: -1,
     matchLength: 0,
+    termStartIdx: 0,
+    termEndIdx: MAX_SPIRAL_ORBS,
     windowOffsetInTerm: 0,
   });
 
   const handleZoomIn = (e: React.MouseEvent) => {
     e.stopPropagation();
-    stateRef.current.orbitAngles.radius = Math.max(5.5, stateRef.current.orbitAngles.radius - 4.5);
+    stateRef.current.orbitAngles.radius = Math.max(4.5, stateRef.current.orbitAngles.radius - 3.2);
   };
 
   const handleZoomOut = (e: React.MouseEvent) => {
     e.stopPropagation();
-    stateRef.current.orbitAngles.radius = Math.min(125, stateRef.current.orbitAngles.radius + 5.5);
+    stateRef.current.orbitAngles.radius = Math.min(75, stateRef.current.orbitAngles.radius + 4.0);
   };
 
   const handleResetOrbit = (e: React.MouseEvent) => {
@@ -144,24 +150,38 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     const width = container.clientWidth || 800;
     const height = container.clientHeight || 460;
 
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+    const isSoftwareGl = (() => {
+      try {
+        const gl = document.createElement('canvas').getContext('webgl2');
+        if (!gl) return true;
+        const ext = gl.getExtension('WEBGL_debug_renderer_info');
+        const param = ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER;
+        const gpu = String(gl.getParameter(param));
+        gl.getExtension('WEBGL_lose_context')?.loseContext();
+        return /SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(gpu);
+      } catch {
+        return false;
+      }
+    })();
+
     // --- 1. Scene & Renderer ---
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x020409, 0.0082);
-
-    const isHeadless =
-      typeof navigator !== 'undefined' &&
-      (navigator.webdriver || /HeadlessChrome/i.test(navigator.userAgent));
+    scene.fog = new THREE.FogExp2(0x010308, 0.012);
 
     const renderer = new THREE.WebGLRenderer({
-      antialias: true,
+      antialias: !isSoftwareGl,
       powerPreference: 'high-performance',
       alpha: true,
     });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(isHeadless ? 1 : Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.22;
+    renderer.toneMappingExposure = 1.24;
     container.appendChild(renderer.domElement);
 
     // --- 2. Studio Glass Environment Map ---
@@ -172,23 +192,23 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     pmremGenerator.dispose();
 
     // --- 3. Camera ---
-    const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 1200);
-    camera.position.set(16, 16, 38);
+    const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 600);
+    camera.position.set(10, 7.5, 22);
     camera.lookAt(0, 0, 0);
 
     // --- 4. Studio Lighting Rig ---
-    const hemiLight = new THREE.HemisphereLight(0x9ecbff, 0x050914, 1.4);
+    const hemiLight = new THREE.HemisphereLight(0xb8dcff, 0x020610, 1.45);
     scene.add(hemiLight);
 
-    const keyLight = new THREE.DirectionalLight(0xfff6e5, 2.2);
-    keyLight.position.set(35, 50, 35);
+    const keyLight = new THREE.DirectionalLight(0xeef6ff, 2.15);
+    keyLight.position.set(30, 44, 30);
     scene.add(keyLight);
 
-    const cyanRim = new THREE.DirectionalLight(0x71b9ff, 1.85);
-    cyanRim.position.set(-35, -20, -35);
-    scene.add(cyanRim);
+    const azureRim = new THREE.DirectionalLight(0x4da3ff, 1.95);
+    azureRim.position.set(-30, -16, -28);
+    scene.add(azureRim);
 
-    const sequencePointLight = new THREE.PointLight(0x71b9ff, 3.0, 40);
+    const sequencePointLight = new THREE.PointLight(0x6cb6ff, 3.2, 32);
     sequencePointLight.visible = false;
     scene.add(sequencePointLight);
 
@@ -204,11 +224,11 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
       const cy = 128;
       const radius = 96;
 
-      // Translucent spherical glass core with specular rim so the digit sits naturally inside the 3D orb
+      // Deep sapphire-obsidian glass core with specular rim
       const coreGrad = ctx.createRadialGradient(cx - 24, cy - 26, 8, cx, cy, radius);
-      coreGrad.addColorStop(0.0, 'rgba(20, 38, 68, 0.88)');
-      coreGrad.addColorStop(0.65, 'rgba(6, 12, 24, 0.92)');
-      coreGrad.addColorStop(0.92, 'rgba(12, 26, 48, 0.85)');
+      coreGrad.addColorStop(0.0, 'rgba(18, 42, 82, 0.90)');
+      coreGrad.addColorStop(0.62, 'rgba(4, 10, 22, 0.94)');
+      coreGrad.addColorStop(0.92, 'rgba(12, 30, 62, 0.88)');
       coreGrad.addColorStop(1.0, 'rgba(0, 0, 0, 0)');
 
       ctx.fillStyle = coreGrad;
@@ -216,17 +236,17 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
       ctx.arc(cx, cy, radius, 0, Math.PI * 2);
       ctx.fill();
 
-      // Luminous circular ring matching the orb's refractive color
+      // Luminous electric-azure circular ring matching the orb's refractive tone
       ctx.strokeStyle = hexColor;
       ctx.lineWidth = 6.5;
-      ctx.shadowColor = hexColor;
-      ctx.shadowBlur = 14;
+      ctx.shadowColor = '#4da3ff';
+      ctx.shadowBlur = 16;
       ctx.beginPath();
       ctx.arc(cx, cy, radius - 8, 0, Math.PI * 2);
       ctx.stroke();
 
-      // Subtle inner glass highlight arc
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+      // Subtle inner ice-blue glass highlight arc
+      ctx.strokeStyle = 'rgba(216, 236, 255, 0.68)';
       ctx.lineWidth = 2.2;
       ctx.shadowBlur = 0;
       ctx.beginPath();
@@ -234,12 +254,12 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
       ctx.stroke();
 
       // Crisp centered numeral inside the orb
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = '#f4f7fb';
       ctx.font = 'bold 112px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.shadowColor = 'rgba(113, 185, 255, 0.85)';
-      ctx.shadowBlur = 12;
+      ctx.shadowColor = 'rgba(77, 163, 255, 0.92)';
+      ctx.shadowBlur = 14;
       ctx.fillText(digit.toString(), cx, cy + 4);
 
       const texture = new THREE.CanvasTexture(canvas);
@@ -263,14 +283,14 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
 
       const grad = ctx.createRadialGradient(cx, cy, 56, cx, cy, 126);
       grad.addColorStop(0.0, 'rgba(255, 255, 255, 0.0)');
-      grad.addColorStop(0.08, 'rgba(255, 255, 255, 0.95)');
-      grad.addColorStop(0.22, 'rgba(190, 228, 255, 0.85)');
-      grad.addColorStop(0.42, 'rgba(113, 185, 255, 0.45)');
-      grad.addColorStop(0.52, 'rgba(15, 30, 55, 0.12)');
-      grad.addColorStop(0.60, 'rgba(255, 255, 255, 0.92)');
-      grad.addColorStop(0.78, 'rgba(158, 208, 255, 0.72)');
-      grad.addColorStop(0.92, 'rgba(113, 185, 255, 0.4)');
-      grad.addColorStop(1.0, 'rgba(113, 185, 255, 0.0)');
+      grad.addColorStop(0.08, 'rgba(244, 247, 251, 0.96)');
+      grad.addColorStop(0.24, 'rgba(184, 220, 255, 0.88)');
+      grad.addColorStop(0.42, 'rgba(77, 163, 255, 0.48)');
+      grad.addColorStop(0.52, 'rgba(8, 20, 44, 0.12)');
+      grad.addColorStop(0.60, 'rgba(232, 244, 255, 0.92)');
+      grad.addColorStop(0.78, 'rgba(108, 182, 255, 0.75)');
+      grad.addColorStop(0.92, 'rgba(77, 163, 255, 0.42)');
+      grad.addColorStop(1.0, 'rgba(77, 163, 255, 0.0)');
 
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, 256, 256);
@@ -289,9 +309,9 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
       canvas.height = 128;
       const ctx = canvas.getContext('2d')!;
       const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-      grad.addColorStop(0, 'rgba(255, 255, 255, 0.85)');
-      grad.addColorStop(0.32, 'rgba(113, 185, 255, 0.65)');
-      grad.addColorStop(0.68, 'rgba(44, 131, 214, 0.2)');
+      grad.addColorStop(0, 'rgba(244, 247, 251, 0.88)');
+      grad.addColorStop(0.32, 'rgba(108, 182, 255, 0.68)');
+      grad.addColorStop(0.68, 'rgba(29, 92, 180, 0.22)');
       grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, 128, 128);
@@ -303,38 +323,39 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     const orbHaloTexture = createHaloTexture();
 
     // --- 6. Celestial Dust Background ---
-    const dustCount = 650;
+    const dustCount = 320;
     const dustGeo = new THREE.BufferGeometry();
     const dustPos = new Float32Array(dustCount * 3);
     for (let i = 0; i < dustCount * 3; i += 3) {
-      dustPos[i] = (Math.random() - 0.5) * 200;
-      dustPos[i + 1] = (Math.random() - 0.5) * 180;
-      dustPos[i + 2] = (Math.random() - 0.5) * 200;
+      dustPos[i] = (Math.random() - 0.5) * 110;
+      dustPos[i + 1] = (Math.random() - 0.5) * 90;
+      dustPos[i + 2] = (Math.random() - 0.5) * 110;
     }
     dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
     const dustMat = new THREE.PointsMaterial({
-      size: 1.0,
-      color: 0x71b9ff,
+      size: 0.75,
+      color: 0x6cb6ff,
       transparent: true,
-      opacity: 0.2,
+      opacity: 0.16,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
     const dustParticles = new THREE.Points(dustGeo, dustMat);
     scene.add(dustParticles);
 
-    // --- 7. Glass Orbs Spiral (InstancedMesh supporting up to 10,000 digits) ---
-    const orbGeometry = new THREE.SphereGeometry(0.26, 18, 18);
+    // --- 7. Glass Orbs Golden Ratio Tornado (Optimized for Maximum 100 Orbs) ---
+    const orbSegments = isSoftwareGl ? 18 : 28;
+    const orbGeometry = new THREE.SphereGeometry(0.32, orbSegments, orbSegments);
     const orbMaterial = new THREE.MeshPhysicalMaterial({
-      roughness: 0.15,
-      metalness: 0.12,
-      transmission: 0.45,
-      thickness: 1.0,
-      ior: 1.48,
+      roughness: 0.12,
+      metalness: 0.14,
+      transmission: isSoftwareGl ? 0 : 0.52,
+      thickness: 1.15,
+      ior: 1.5,
       clearcoat: 1.0,
-      clearcoatRoughness: 0.1,
+      clearcoatRoughness: 0.08,
       transparent: true,
-      opacity: 0.96,
+      opacity: isSoftwareGl ? 0.88 : 0.96,
     });
 
     const instancedMesh = new THREE.InstancedMesh(orbGeometry, orbMaterial, MAX_SPIRAL_ORBS);
@@ -342,16 +363,17 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     instancedMesh.frustumCulled = false;
     scene.add(instancedMesh);
 
-    // Pre-allocate full-capacity spiral line geometry (up to 10,000 points)
-    const spiralLineBuffer = new Float32Array(MAX_SPIRAL_ORBS * 3);
+    // Pre-allocate smooth high-resolution curve buffer for the continuous Golden Ratio Tornado thread
+    const maxCurveVertices = SPIRAL_CURVE_SEGMENTS + 1;
+    const spiralLineBuffer = new Float32Array(maxCurveVertices * 3);
     const lineGeo = new THREE.BufferGeometry();
     const linePosAttr = new THREE.BufferAttribute(spiralLineBuffer, 3);
     linePosAttr.setUsage(THREE.DynamicDrawUsage);
     lineGeo.setAttribute('position', linePosAttr);
     const lineMat = new THREE.LineBasicMaterial({
-      color: 0x4a82b8,
+      color: 0x4da3ff,
       transparent: true,
-      opacity: 0.34,
+      opacity: 0.42,
       blending: THREE.AdditiveBlending,
     });
     const spiralLine = new THREE.Line(lineGeo, lineMat);
@@ -367,39 +389,37 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     const haloSprites: THREE.Sprite[] = [];
     const microRings: THREE.Mesh[] = [];
 
-    // Saturn-proportioned planetary ring geometry around matched orbs
-    const sharedRingGeometry = new THREE.RingGeometry(0.46, 0.84, 64);
+    const sharedRingGeometry = new THREE.RingGeometry(0.56, 1.02, 64);
     const sharedHaloMaterial = new THREE.SpriteMaterial({
       map: orbHaloTexture,
       transparent: true,
-      opacity: 0.72,
+      opacity: 0.78,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
 
     for (let b = 0; b < maxBadges; b++) {
-      // Digit sprite centered directly INSIDE the matched glass orb on the spiral
       const bMat = new THREE.SpriteMaterial({
         transparent: true,
         opacity: 0.98,
         depthTest: false,
       });
       const bSprite = new THREE.Sprite(bMat);
-      bSprite.scale.set(0.86, 0.86, 0.86);
+      bSprite.scale.set(1.04, 1.04, 1.04);
       bSprite.renderOrder = 20;
       bSprite.visible = false;
       highlightGroup.add(bSprite);
       badgeSprites.push(bSprite);
 
       const hSprite = new THREE.Sprite(sharedHaloMaterial.clone());
-      hSprite.scale.set(2.25, 2.25, 2.25);
+      hSprite.scale.set(2.6, 2.6, 2.6);
       hSprite.visible = false;
       highlightGroup.add(hSprite);
       haloSprites.push(hSprite);
 
       const rMat = new THREE.MeshBasicMaterial({
         map: saturnRingTexture,
-        color: 0x9ecbff,
+        color: 0xb8dcff,
         side: THREE.DoubleSide,
         transparent: true,
         opacity: 0.95,
@@ -420,19 +440,19 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     const conduitGeo = new THREE.BufferGeometry();
     conduitGeo.setAttribute('position', new THREE.BufferAttribute(conduitPositions, 3));
     const conduitMat = new THREE.LineBasicMaterial({
-      color: 0x71b9ff,
+      color: 0x6cb6ff,
       linewidth: 2,
       transparent: true,
-      opacity: 0.92,
+      opacity: 0.95,
       blending: THREE.AdditiveBlending,
     });
     const conduitLine = new THREE.Line(conduitGeo, conduitMat);
     conduitLine.visible = false;
     highlightGroup.add(conduitLine);
 
-    const shockwaveGeo = new THREE.RingGeometry(0.2, 0.45, 48);
+    const shockwaveGeo = new THREE.RingGeometry(0.24, 0.54, 48);
     const shockwaveMat = new THREE.MeshBasicMaterial({
-      color: 0x71b9ff,
+      color: 0x6cb6ff,
       side: THREE.DoubleSide,
       transparent: true,
       opacity: 0.0,
@@ -454,7 +474,7 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
         MAX_SPIRAL_ORBS
       );
       currentDigits = allocation.digits;
-      const count = currentDigits.length;
+      const count = Math.min(MAX_SPIRAL_ORBS, currentDigits.length);
       const spiralData = generateSpiralData(
         count,
         allocation.matchStartIdx,
@@ -468,11 +488,19 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
       stateRef.current.activeOrbCount = count;
       stateRef.current.matchStartIdx = allocation.matchStartIdx;
       stateRef.current.matchLength = allocation.matchLength;
+      stateRef.current.termStartIdx = allocation.termStartIdx;
+      stateRef.current.termEndIdx = allocation.termEndIdx;
       stateRef.current.windowOffsetInTerm = allocation.windowOffsetInTerm;
 
       const matchStart = allocation.matchStartIdx;
       const matchEnd = matchStart + allocation.matchLength;
       const hasMatch = matchStart >= 0 && allocation.matchLength > 0;
+
+      // Update the smooth parametric Golden Ratio Tornado thread
+      const curvePts = Math.min(maxCurveVertices, spiralData.curvePointCount);
+      spiralLineBuffer.set(spiralData.curvePositions.subarray(0, curvePts * 3));
+      linePosAttr.needsUpdate = true;
+      lineGeo.setDrawRange(0, curvePts);
 
       instancedMesh.count = count;
       for (let i = 0; i < count; i++) {
@@ -481,24 +509,28 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
         const oy = currentPositions[i3 + 1];
         const oz = currentPositions[i3 + 2];
 
-        spiralLineBuffer[i3] = ox;
-        spiralLineBuffer[i3 + 1] = oy;
-        spiralLineBuffer[i3 + 2] = oz;
-
         const digit = parseInt(currentDigits[i] || '0', 10) || 0;
         const rule = DIGIT_RULES[digit];
 
         const isMatchedOrb = hasMatch && i >= matchStart && i < matchEnd;
-        const orbScale = isMatchedOrb ? 1.45 : 0.96;
+
+        // Smooth golden-ratio scale progression from lower vortex tip to upper funnel crown
+        const heightNorm = i / Math.max(1, count - 1);
+        const baseTornadoScale = 0.78 + 0.30 * Math.pow(heightNorm, INV_PHI);
+        const orbScale = isMatchedOrb ? 1.42 : baseTornadoScale;
 
         _vec3.set(ox, oy, oz);
         _scaleVec.set(orbScale, orbScale, orbScale);
         _matrix.compose(_vec3, _quat, _scaleVec);
         instancedMesh.setMatrixAt(i, _matrix);
 
-        _color.setHex(rule.hex);
-        if (hasMatch && !isMatchedOrb) {
-          _color.multiplyScalar(0.7);
+        if (isMatchedOrb) {
+          _color.setHex(0xb8dcff);
+        } else {
+          _color.setHex(rule.hex);
+          if (hasMatch) {
+            _color.multiplyScalar(0.65);
+          }
         }
         instancedMesh.setColorAt(i, _color);
       }
@@ -508,10 +540,7 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
         instancedMesh.instanceColor.needsUpdate = true;
       }
 
-      linePosAttr.needsUpdate = true;
-      lineGeo.setDrawRange(0, count);
-
-      // Update in-orb digits, Saturn rings, and front-facing camera viewpoint inside the spiral
+      // Update in-orb digits, Saturn rings, and front-facing camera viewpoint inside the tornado
       if (hasMatch) {
         const trailLen = Math.min(maxBadges, allocation.matchLength);
         const conduitAttr = conduitLine.geometry.attributes.position as THREE.BufferAttribute;
@@ -527,7 +556,6 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
             const digit = parseInt(currentDigits[nodeIdx] || '0', 10) || 0;
             const rule = DIGIT_RULES[digit];
 
-            // Position the digit directly inside the matched orb on the spiral
             const bSprite = badgeSprites[b];
             bSprite.material.map = badgeTextures[digit];
             bSprite.material.needsUpdate = true;
@@ -535,7 +563,7 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
             bSprite.visible = true;
 
             const hSprite = haloSprites[b];
-            hSprite.material.color.setHex(rule.hex);
+            hSprite.material.color.setHex(0x6cb6ff);
             hSprite.position.set(ox, oy, oz);
             hSprite.visible = true;
 
@@ -559,9 +587,9 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
           }
         }
         conduitAttr.needsUpdate = true;
-        conduitLine.visible = true;
+        conduitLine.visible = trailLen > 1;
 
-        // Compute exact center of the matched sequence inside the spiral
+        // Compute exact center of the matched sequence along the tornado curve
         const exactMidIdx = matchStart + (trailLen - 1) * 0.5;
         const idxLow = Math.max(0, Math.min(count - 1, Math.floor(exactMidIdx)));
         const idxHigh = Math.max(0, Math.min(count - 1, Math.ceil(exactMidIdx)));
@@ -575,16 +603,20 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
           currentPositions[idxLow * 3 + 1] * (1 - frac) +
           currentPositions[idxHigh * 3 + 1] * frac;
 
-        const midX = Math.sin(midTheta) * midRadius;
-        const midZ = Math.cos(midTheta) * midRadius;
+        // Parametric tornado uses x = r*cos(theta), z = r*sin(theta)
+        // In spherical camera coordinates (x = R*sin(phi)*sin(camTheta), z = R*sin(phi)*cos(camTheta)),
+        // outward radial direction (cos(midTheta), sin(midTheta)) corresponds to camTheta = PI/2 - midTheta
+        const midX = midRadius * Math.cos(midTheta);
+        const midZ = midRadius * Math.sin(midTheta);
+        const cameraFacingTheta = Math.PI * 0.5 - midTheta;
 
         shockwaveRing.position.set(midX, midY, midZ);
-        shockwaveRing.rotation.set(0, midTheta, 0);
+        shockwaveRing.rotation.set(0, cameraFacingTheta, 0);
 
         sequencePointLight.position.set(
-          midX + Math.sin(midTheta) * 4,
-          midY + 2.2,
-          midZ + Math.cos(midTheta) * 4
+          midX + Math.cos(midTheta) * 3.5,
+          midY + 1.8,
+          midZ + Math.sin(midTheta) * 3.5
         );
         sequencePointLight.visible = true;
 
@@ -594,8 +626,8 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
 
         const targetVec = new THREE.Vector3(midX, midY, midZ);
         const targetAngles = {
-          theta: midTheta,
-          phi: 1.38,
+          theta: cameraFacingTheta,
+          phi: 1.34,
           radius: frontRadius,
         };
 
@@ -667,8 +699,8 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
       if (e.ctrlKey || e.metaKey || stateRef.current.hasHighlight) {
         e.preventDefault();
         stateRef.current.orbitAngles.radius = Math.max(
-          5.5,
-          Math.min(125, stateRef.current.orbitAngles.radius + e.deltaY * 0.03)
+          4.5,
+          Math.min(75, stateRef.current.orbitAngles.radius + e.deltaY * 0.025)
         );
       }
     };
@@ -716,8 +748,8 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
         if (stateRef.current.pinchDist > 0) {
           const diff = stateRef.current.pinchDist - dist;
           stateRef.current.orbitAngles.radius = Math.max(
-            5.5,
-            Math.min(125, stateRef.current.orbitAngles.radius + diff * 0.08)
+            4.5,
+            Math.min(75, stateRef.current.orbitAngles.radius + diff * 0.065)
           );
         }
         stateRef.current.pinchDist = dist;
@@ -745,15 +777,47 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     window.addEventListener('resize', onResize);
 
     // --- 10. Animation Loop ---
-    let animId: number;
+    let animId = 0;
+    let isDisposed = false;
     const clock = new THREE.Clock();
 
+    const scheduleNextFrame = (cb: () => void) => {
+      if (isDisposed) return;
+      if (isSoftwareGl) {
+        const gl = renderer.getContext() as WebGL2RenderingContext;
+        if (gl && typeof gl.fenceSync === 'function') {
+          const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+          gl.flush();
+          const poll = () => {
+            if (isDisposed) return;
+            const state = sync && gl.getSyncParameter(sync, gl.SYNC_STATUS);
+            if (state === gl.UNSIGNALED) {
+              animId = window.setTimeout(poll, 5);
+            } else {
+              if (sync) gl.deleteSync(sync);
+              animId = window.setTimeout(cb, 80);
+            }
+          };
+          animId = window.setTimeout(poll, 5);
+          return;
+        }
+      }
+      animId = requestAnimationFrame(cb);
+    };
+
     const animate = () => {
-      animId = requestAnimationFrame(animate);
-      if (typeof document !== 'undefined' && document.hidden && !stateRef.current.needsSequenceRebuild) {
+      if (isDisposed) return;
+
+      if (
+        typeof document !== 'undefined' &&
+        document.hidden &&
+        !stateRef.current.needsSequenceRebuild
+      ) {
         clock.getDelta();
+        animId = requestAnimationFrame(animate);
         return;
       }
+
       const delta = Math.min(clock.getDelta(), 0.1);
       const time = clock.getElapsedTime();
 
@@ -768,7 +832,9 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
       }
 
       const hasHighlight = stateRef.current.hasHighlight;
-      dustParticles.rotation.y = time * 0.012;
+      if (!prefersReducedMotion) {
+        dustParticles.rotation.y = time * 0.01;
+      }
 
       if (hasHighlight) {
         const trailLen = Math.min(maxBadges, stateRef.current.matchLength);
@@ -779,27 +845,27 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
           const nodeIdx = matchStart + b;
           if (nodeIdx >= 0 && nodeIdx < count) {
             const ring = microRings[b];
-            // Orient ring like Saturn's planetary rings tilted around the orb's equator
-            const baseTheta = currentThetas[nodeIdx] || 0;
-            ring.rotation.y = baseTheta + Math.sin(time * 0.7 + b * 0.4) * 0.14;
-            ring.rotation.x = 1.16 + Math.cos(time * 0.9 + b * 0.5) * 0.06;
-            ring.rotation.z = 0.26 + Math.sin(time * 0.6 + b * 0.7) * 0.08;
+            const baseTheta = Math.PI * 0.5 - (currentThetas[nodeIdx] || 0);
+            const motionScale = prefersReducedMotion ? 0 : 1;
+            ring.rotation.y = baseTheta + Math.sin(time * 0.7 + b * 0.4) * 0.14 * motionScale;
+            ring.rotation.x = 1.16 + Math.cos(time * 0.9 + b * 0.5) * 0.06 * motionScale;
+            ring.rotation.z = 0.26 + Math.sin(time * 0.6 + b * 0.7) * 0.08 * motionScale;
           }
         }
 
-        if (stateRef.current.shockwaveProgress < 1.0) {
-          stateRef.current.shockwaveProgress += delta * 1.6;
+        if (stateRef.current.shockwaveProgress < 1.0 && !prefersReducedMotion) {
+          stateRef.current.shockwaveProgress += delta * PHI;
           const sp = stateRef.current.shockwaveProgress;
-          const sScale = 1 + sp * 9;
+          const sScale = 1 + sp * 7.5;
           shockwaveRing.scale.set(sScale, sScale, sScale);
-          shockwaveMat.opacity = Math.max(0, (1 - sp) * 0.75);
+          shockwaveMat.opacity = Math.max(0, (1 - sp) * 0.72);
           shockwaveRing.visible = true;
         } else {
           shockwaveRing.visible = false;
         }
       } else {
-        if (!stateRef.current.isMouseDown) {
-          stateRef.current.orbitAngles.theta += delta * 0.08;
+        if (!stateRef.current.isMouseDown && !prefersReducedMotion) {
+          stateRef.current.orbitAngles.theta += delta * 0.11;
         }
       }
 
@@ -810,26 +876,27 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
       const cy = targetPos.y + radius * Math.cos(phi);
       const cz = targetPos.z + radius * Math.sin(phi) * Math.cos(theta);
 
-      camera.position.x = THREE.MathUtils.damp(camera.position.x, cx, 6.5, delta);
-      camera.position.y = THREE.MathUtils.damp(camera.position.y, cy, 6.5, delta);
-      camera.position.z = THREE.MathUtils.damp(camera.position.z, cz, 6.5, delta);
+      const dampFactor = prefersReducedMotion ? 18.0 : 6.8;
+      camera.position.x = THREE.MathUtils.damp(camera.position.x, cx, dampFactor, delta);
+      camera.position.y = THREE.MathUtils.damp(camera.position.y, cy, dampFactor, delta);
+      camera.position.z = THREE.MathUtils.damp(camera.position.z, cz, dampFactor, delta);
 
       stateRef.current.camLookAt.x = THREE.MathUtils.damp(
         stateRef.current.camLookAt.x,
         targetPos.x,
-        7.5,
+        dampFactor + 1.0,
         delta
       );
       stateRef.current.camLookAt.y = THREE.MathUtils.damp(
         stateRef.current.camLookAt.y,
         targetPos.y,
-        7.5,
+        dampFactor + 1.0,
         delta
       );
       stateRef.current.camLookAt.z = THREE.MathUtils.damp(
         stateRef.current.camLookAt.z,
         targetPos.z,
-        7.5,
+        dampFactor + 1.0,
         delta
       );
 
@@ -839,13 +906,19 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
       if (fireReadyCallback) {
         onSequenceReadyRef.current?.();
       }
+
+      scheduleNextFrame(animate);
     };
 
-    renderer.compile(scene, camera);
+    if (!isSoftwareGl) {
+      renderer.compile(scene, camera);
+    }
     animate();
 
     return () => {
+      isDisposed = true;
       cancelAnimationFrame(animId);
+      clearTimeout(animId);
       dom.removeEventListener('contextmenu', onContextMenu);
       dom.removeEventListener('mousedown', onMouseDown);
       window.removeEventListener('mousemove', onMouseMove);
@@ -895,13 +968,13 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     >
       <div ref={mountRef} className="absolute inset-0 w-full h-full" />
 
-      {/* Futuristic Glassy Viewport Corners */}
-      <div className="absolute top-2.5 left-2.5 w-3 h-3 border-t-2 border-l-2 border-[#71b9ff]/60 pointer-events-none z-10" />
-      <div className="absolute top-2.5 right-2.5 w-3 h-3 border-t-2 border-r-2 border-[#71b9ff]/60 pointer-events-none z-10" />
-      <div className="absolute bottom-2.5 left-2.5 w-3 h-3 border-b-2 border-l-2 border-[#71b9ff]/60 pointer-events-none z-10" />
-      <div className="absolute bottom-2.5 right-2.5 w-3 h-3 border-b-2 border-r-2 border-[#71b9ff]/60 pointer-events-none z-10" />
+      {/* Viewport Corner Accents */}
+      <div className="absolute top-2.5 left-2.5 w-3 h-3 border-t-2 border-l-2 border-[#4da3ff]/55 pointer-events-none z-10" />
+      <div className="absolute top-2.5 right-2.5 w-3 h-3 border-t-2 border-r-2 border-[#4da3ff]/55 pointer-events-none z-10" />
+      <div className="absolute bottom-2.5 left-2.5 w-3 h-3 border-b-2 border-l-2 border-[#4da3ff]/55 pointer-events-none z-10" />
+      <div className="absolute bottom-2.5 right-2.5 w-3 h-3 border-b-2 border-r-2 border-[#4da3ff]/55 pointer-events-none z-10" />
 
-      {/* Glassy Floating Zoom & Navigation Tools */}
+      {/* Floating Zoom & Navigation Tools */}
       <div className="absolute right-4 bottom-4 flex items-center gap-1.5 z-20 pointer-events-auto">
         <button
           type="button"
@@ -913,18 +986,18 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
           }
           className={`h-8 px-2.5 rounded-xl border text-xs font-mono flex items-center gap-1.5 transition shadow-lg cursor-pointer active:scale-95 ${
             isOrbitActive
-              ? 'bg-[#71b9ff]/20 border-[#71b9ff] text-[#71b9ff] shadow-[0_0_15px_rgba(113,185,255,0.3)]'
-              : 'bg-[#08101f]/90 border-white/10 text-[#8e96a5] hover:text-white hover:border-[#71b9ff]'
+              ? 'bg-[#102544]/95 border-[#4da3ff] text-[#6cb6ff] shadow-[0_0_15px_rgba(77,163,255,0.3)]'
+              : 'bg-[#050b16]/95 border-[#162742] text-[#8594a8] hover:text-[#f4f7fb] hover:border-[#4da3ff]'
           }`}
         >
           {isOrbitActive ? (
             <>
-              <Compass className="w-3.5 h-3.5 text-[#71b9ff]" />
+              <Compass className="w-3.5 h-3.5 text-[#4da3ff]" />
               <span className="hidden sm:inline">Orbit</span>
             </>
           ) : (
             <>
-              <Move className="w-3.5 h-3.5 text-[#8bbff0]" />
+              <Move className="w-3.5 h-3.5 text-[#6cb6ff]" />
               <span className="hidden sm:inline">Move</span>
             </>
           )}
@@ -935,7 +1008,7 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
           onClick={handleZoomIn}
           title="Zoom In"
           aria-label="Zoom In"
-          className="w-8 h-8 rounded-xl bg-[#08101f]/90 border border-white/10 hover:border-[#71b9ff] text-[#8e96a5] hover:text-white flex items-center justify-center transition shadow-lg cursor-pointer hover:shadow-[0_0_12px_rgba(113,185,255,0.25)] active:scale-95"
+          className="w-8 h-8 rounded-xl bg-[#050b16]/95 border border-[#162742] hover:border-[#4da3ff] text-[#8594a8] hover:text-[#f4f7fb] flex items-center justify-center transition shadow-lg cursor-pointer hover:shadow-[0_0_12px_rgba(77,163,255,0.25)] active:scale-95"
         >
           <ZoomIn className="w-4 h-4" />
         </button>
@@ -945,7 +1018,7 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
           onClick={handleZoomOut}
           title="Zoom Out"
           aria-label="Zoom Out"
-          className="w-8 h-8 rounded-xl bg-[#08101f]/90 border border-white/10 hover:border-[#71b9ff] text-[#8e96a5] hover:text-white flex items-center justify-center transition shadow-lg cursor-pointer hover:shadow-[0_0_12px_rgba(113,185,255,0.25)] active:scale-95"
+          className="w-8 h-8 rounded-xl bg-[#050b16]/95 border border-[#162742] hover:border-[#4da3ff] text-[#8594a8] hover:text-[#f4f7fb] flex items-center justify-center transition shadow-lg cursor-pointer hover:shadow-[0_0_12px_rgba(77,163,255,0.25)] active:scale-95"
         >
           <ZoomOut className="w-4 h-4" />
         </button>
@@ -955,15 +1028,15 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
           onClick={handleResetOrbit}
           title="Reset View Position"
           aria-label="Reset View Position"
-          className="w-8 h-8 rounded-xl bg-[#08101f]/90 border border-white/10 hover:border-[#71b9ff] text-[#8e96a5] hover:text-white flex items-center justify-center transition shadow-lg cursor-pointer hover:shadow-[0_0_12px_rgba(113,185,255,0.25)] active:scale-95"
+          className="w-8 h-8 rounded-xl bg-[#050b16]/95 border border-[#162742] hover:border-[#4da3ff] text-[#8594a8] hover:text-[#f4f7fb] flex items-center justify-center transition shadow-lg cursor-pointer hover:shadow-[0_0_12px_rgba(77,163,255,0.25)] active:scale-95"
         >
           <RotateCcw className="w-4 h-4" />
         </button>
       </div>
 
       {/* Bottom Status Caption */}
-      <div className="absolute left-4 bottom-4 text-[#7d8fa6] font-mono text-[11px] tracking-wide pointer-events-none z-10 max-w-[65%] truncate flex items-center gap-2">
-        <span className="px-2 py-0.5 rounded-md bg-[#08101f]/90 border border-white/10 text-[#9bd3ff]">
+      <div className="absolute left-4 bottom-4 text-[#68788e] font-mono text-[11px] tracking-wide pointer-events-none z-10 max-w-[65%] truncate flex items-center gap-2">
+        <span className="px-2 py-0.5 rounded-md bg-[#050b16]/95 border border-[#162742] text-[#8bc4ff]">
           {isOrbitActive ? 'Orbit active' : 'Move active'}
         </span>
         <span className="hidden sm:inline">
