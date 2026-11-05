@@ -18,7 +18,7 @@ import {
   Volume2,
   VolumeX,
   Sparkles,
-  Send,
+  Search,
   Music,
   Share2,
   Check,
@@ -60,11 +60,11 @@ function getInitialSearchNumber(): string {
 export default function App() {
   const [inputValue, setInputValue] = useState('');
   const [previewQuery, setPreviewQuery] = useState('');
+  const [isInputFocused, setIsInputFocused] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [searchProgress, setSearchProgress] = useState<number | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [matchResult, setMatchResult] = useState<FibonacciMatchResult | null>(null);
-  const [aboutOpen, setAboutOpen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(soundEngine.getIsPlaying());
   const [shareCopied, setShareCopied] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -75,6 +75,7 @@ export default function App() {
   const inputRef = useRef<HTMLInputElement>(null);
   const swirlSectionRef = useRef<HTMLElement>(null);
   const resultRef = useRef<HTMLElement>(null);
+  const whatsThisSectionRef = useRef<HTMLElement>(null);
 
   // Track active search request ID to prevent stale/duplicate results
   const activeSearchReqRef = useRef(0);
@@ -339,14 +340,13 @@ export default function App() {
     soundEngine.togglePlayPause();
   };
 
-  // Live preview digits for input (up to 8 digits)
-  const liveDigits = inputValue
-    .slice(0, 8)
-    .split('')
-    .filter((c) => /^[0-9]$/.test(c))
-    .map(Number);
+  const scrollToWhatsThis = () => {
+    whatsThisSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   const showResultSection = isSearching || Boolean(matchResult) || Boolean(searchError);
+  const isSearchBarActive = isInputFocused || inputValue.length > 0;
+  const showClearHelper = Boolean(inputValue) || Boolean(matchResult) || Boolean(searchError);
 
   // Adaptive typography for displaying the complete Fibonacci term immediately without internal scrolling
   const termTypographyClass = matchResult
@@ -358,7 +358,7 @@ export default function App() {
     : 'text-xs sm:text-[13px] leading-relaxed tracking-wide';
 
   return (
-    <div className="max-w-[1100px] mx-auto px-4 sm:px-8 pt-6 sm:pt-8 pb-24 text-[#f2f4f8] min-h-screen flex flex-col justify-between">
+    <div className="max-w-[1100px] mx-auto px-4 sm:px-8 pt-6 sm:pt-8 pb-20 text-[#f2f4f8] min-h-screen flex flex-col justify-between">
       {/* Floating Glass Navigation Header */}
       <header className="glass-panel rounded-2xl px-5 py-3.5 flex justify-between items-center text-xs tracking-wide">
         <button
@@ -457,136 +457,91 @@ export default function App() {
       <main className="flex-1">
         {/* Futuristic Glass Hero Console */}
         <section className="max-w-[760px] mx-auto mt-10 sm:mt-14 text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#71b9ff]/10 border border-[#71b9ff]/30 text-[#71b9ff] text-[11px] font-mono tracking-[0.16em] uppercase mb-4 shadow-[0_0_20px_rgba(113,185,255,0.15)]">
-            <Sparkles className="w-3.5 h-3.5" />
-            Infinite Sequence Orb Space
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#71b9ff]/10 border border-[#71b9ff]/30 text-[#71b9ff] text-[10px] sm:text-[11px] font-mono tracking-[0.16em] uppercase mb-5 shadow-[0_0_20px_rgba(113,185,255,0.15)]">
+            <Sparkles className="w-3.5 h-3.5 shrink-0" />
+            <span>A LITTLE CURIOSITY. AN INFINITE SEQUENCE.</span>
           </div>
 
-          <h1 className="font-semibold text-[34px] sm:text-[52px] md:text-[62px] tracking-[-0.05em] leading-[1.08] mx-auto mb-4 text-[#f2f4f8]">
+          <h1 className="font-semibold text-[34px] sm:text-[52px] md:text-[62px] tracking-[-0.05em] leading-[1.08] mx-auto mb-5 text-[#f2f4f8]">
             Your number is hiding inside{' '}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#71b9ff] via-[#9ecbff] to-[#f0c978]">
               Fibonacci.
             </span>
           </h1>
 
-          <p className="max-w-[560px] mx-auto text-[#a2aab8] text-sm sm:text-[15px] leading-relaxed">
-            Every digit in the sequence is a radiant glass orb in 3D space. Type your number and watch its exact sequence of orbs illuminate in the swirl.
+          <p className="max-w-[560px] mx-auto text-[#a2aab8] text-sm sm:text-[16px] leading-relaxed">
+            Every number has a story.
+            <br />
+            Find where yours begins in the Fibonacci sequence.
           </p>
 
-          {/* Constant-Width Glass Search Console (1 to 8 digits, leading zeros preserved) */}
-          <div ref={searchBarRef} className="w-full max-w-[600px] mx-auto mt-7">
+          {/* Constant-Width Search Bar Matching Reference Image (1 to 8 digits, leading zeros preserved) */}
+          <div ref={searchBarRef} className="w-full max-w-[640px] mx-auto mt-8">
             <form
               onSubmit={handleSubmit}
-              className="glass-panel-glow rounded-2xl p-2 flex items-center gap-2 w-full transition duration-300"
+              className={`rounded-2xl bg-[#090d16]/95 p-2 sm:p-2.5 flex items-center gap-3 w-full transition-all duration-300 border ${
+                isSearchBarActive
+                  ? 'border-[#68b3ff]/80 shadow-[0_0_32px_rgba(104,179,255,0.22),inset_0_0_14px_rgba(104,179,255,0.07)]'
+                  : 'border-[#1e2d45] shadow-[0_12px_36px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.05)] hover:border-[#2e4568]'
+              }`}
             >
-              <div className="relative flex-1 min-w-0 flex items-center">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  maxLength={8}
-                  value={inputValue}
-                  onChange={handleInputChange}
-                  onPaste={handleInputPaste}
-                  aria-label="Number sequence to search (1 to 8 digits)"
-                  placeholder="Type any number (e.g. 13, 144, 1000)..."
-                  className="flex-1 min-w-0 bg-transparent text-[#f2f4f8] border-0 outline-none pl-4 pr-2 py-2.5 text-base sm:text-[18px] tracking-[0.14em] font-mono placeholder:text-[#556173] placeholder:tracking-normal placeholder:text-sm sm:placeholder:text-[15px] font-semibold"
-                  required
+              <div className="pl-2.5 sm:pl-3.5 flex items-center justify-center shrink-0 pointer-events-none">
+                <Search
+                  className={`w-5 h-5 transition-colors duration-200 ${
+                    isSearchBarActive ? 'text-[#7dbfff]' : 'text-[#6c7f99]'
+                  }`}
                 />
-
-                {/* Fixed-width clear button slot so input width never shifts */}
-                <div className="w-7 h-7 shrink-0 flex items-center justify-center">
-                  <button
-                    type="button"
-                    onClick={() => handleClear(false)}
-                    tabIndex={inputValue ? 0 : -1}
-                    className={`p-1 rounded-md text-[#6e7d94] hover:text-white hover:bg-white/[0.08] transition cursor-pointer ${
-                      inputValue ? 'opacity-100' : 'opacity-0 pointer-events-none'
-                    }`}
-                    title="Clear search and return to homepage (/)"
-                    aria-label="Clear search input"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                {/* Fixed-width live typing glass orb preview slot so input width stays constant */}
-                <div className="hidden sm:flex items-center justify-end gap-1.5 w-[156px] shrink-0 pr-2 pointer-events-none">
-                  {liveDigits.map((d, i) => (
-                    <span
-                      key={i}
-                      className="w-3.5 h-3.5 rounded-full glass-orb shrink-0"
-                      style={{
-                        backgroundColor: DIGIT_RULES[d].color,
-                        color: DIGIT_RULES[d].color,
-                      }}
-                    />
-                  ))}
-                </div>
               </div>
+
+              <input
+                ref={inputRef}
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                maxLength={8}
+                value={inputValue}
+                onFocus={() => setIsInputFocused(true)}
+                onBlur={() => setIsInputFocused(false)}
+                onChange={handleInputChange}
+                onPaste={handleInputPaste}
+                aria-label="Enter a number (1 to 8 digits)"
+                placeholder="Enter a number"
+                className="flex-1 min-w-0 bg-transparent text-white border-0 outline-none py-2.5 text-lg sm:text-[21px] tracking-[0.14em] font-mono font-bold placeholder:text-[#6e7f96] placeholder:tracking-normal placeholder:font-sans placeholder:font-normal placeholder:text-base sm:placeholder:text-[18px]"
+                required
+              />
 
               <button
                 type="submit"
-                className="w-[116px] shrink-0 py-2.5 rounded-xl bg-gradient-to-r from-[#71b9ff] to-[#2c83d6] hover:from-[#8ec8ff] hover:to-[#3891e8] text-[#060b14] font-semibold text-xs sm:text-[13px] tracking-wide font-mono cursor-pointer whitespace-nowrap shadow-[0_0_20px_rgba(113,185,255,0.4)] hover:-translate-y-0.5 active:translate-y-0 transition duration-200 flex items-center justify-center gap-1.5"
+                className="w-[154px] sm:w-[172px] shrink-0 py-3 sm:py-3.5 px-4 rounded-xl bg-[#70b6ff] hover:bg-[#84c2ff] active:bg-[#5ea8f5] text-[#040812] font-semibold text-xs sm:text-[14px] tracking-tight cursor-pointer whitespace-nowrap shadow-[0_0_22px_rgba(112,182,255,0.35)] transition duration-200 flex items-center justify-center gap-1.5"
               >
-                <Send className="w-3.5 h-3.5 shrink-0" />
-                <span>{isSearching ? 'Scanning…' : 'Find it'}</span>
+                <span>{isSearching ? 'Scanning…' : 'Find my number'}</span>
+                {!isSearching && (
+                  <span aria-hidden="true" className="text-[13px] leading-none font-bold">
+                    ↗
+                  </span>
+                )}
               </button>
             </form>
-          </div>
 
-          {/* Futuristic Glass Color Legend Bar (Uniform Size, 10 Colors) */}
-          <div className="max-w-[700px] mx-auto mt-6 glass-panel rounded-2xl p-4 sm:p-5 text-center">
-            <div className="flex items-center justify-between pb-3 mb-3 border-b border-white/[0.06] text-xs">
-              <span className="font-medium text-[#c5d3e8] flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#71b9ff] shadow-[0_0_8px_#71b9ff]"></span>
-                Orb Colour System
+            {/* Helper & Clear Row Below Search Bar */}
+            <div className="flex items-center justify-between px-1.5 mt-2.5 min-h-[20px] text-xs">
+              <span className="text-[#6e7f96] tracking-wide">
+                1–8 digits. Even the zeros count.
               </span>
-              <span className="text-[#7d8fa6] font-mono text-[11px]">
-                Uniform Size · Digit Codes 0–9
-              </span>
-            </div>
 
-            {/* 10 Glowing Glass Orbs */}
-            <div className="grid grid-cols-5 sm:grid-cols-10 gap-2 sm:gap-3 py-1">
-              {DIGIT_RULES.map((rule) => (
-                <button
-                  key={rule.digit}
-                  type="button"
-                  onClick={() => {
-                    setInputValue((prev) => {
-                      if (prev.length >= 8) return prev;
-                      const next = (prev + String(rule.digit)).slice(0, 8);
-                      setPreviewQuery(next);
-                      return next;
-                    });
-                  }}
-                  className="flex flex-col items-center gap-2 p-2 rounded-xl bg-white/[0.02] hover:bg-white/[0.08] border border-white/[0.04] hover:border-white/20 transition group cursor-pointer"
-                  title={`Click to add digit ${rule.digit} (${rule.name})`}
-                >
-                  <span
-                    className="w-6 h-6 sm:w-7 sm:h-7 rounded-full glass-orb transition duration-200 group-hover:scale-110"
-                    style={{
-                      backgroundColor: rule.color,
-                      color: rule.color,
-                    }}
-                  />
-                  <div className="flex flex-col items-center">
-                    <span className="font-mono text-xs font-bold text-white group-hover:text-[#71b9ff]">
-                      {rule.digit}
-                    </span>
-                    <span className="text-[9px] text-[#718299] truncate max-w-[50px] hidden sm:inline">
-                      {rule.name.split(' ')[0]}
-                    </span>
-                  </div>
-                </button>
-              ))}
+              <button
+                type="button"
+                onClick={() => handleClear(false)}
+                tabIndex={showClearHelper ? 0 : -1}
+                className={`inline-flex items-center gap-1.5 text-[#c8d4e6] hover:text-white font-medium transition cursor-pointer ${
+                  showClearHelper ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                }`}
+                aria-label="Clear search"
+              >
+                <span>Clear search</span>
+                <X className="w-3.5 h-3.5 text-[#8fa2bd]" />
+              </button>
             </div>
-
-            <p className="text-[12px] text-[#7d8fa6] mt-3 italic font-sans">
-              Every sequence is a continuous trail of these glassy orbs glowing in the 3D swirl.
-            </p>
           </div>
         </section>
 
@@ -603,11 +558,11 @@ export default function App() {
           />
         </section>
 
-        {/* Results Glass Console ("Sequence Illuminated in 3D") */}
+        {/* Results Glass Console ("Your digits, discovered.") */}
         {showResultSection && (
           <section
             ref={resultRef}
-            className="max-w-[960px] mx-auto mb-8 glass-panel rounded-2xl p-5 sm:p-7 animate-rise relative overflow-hidden"
+            className="max-w-[960px] mx-auto mb-10 glass-panel rounded-2xl p-5 sm:p-7 animate-rise relative overflow-hidden"
             aria-live="polite"
           >
             {/* Non-Blocking Top Progress Indicator Bar */}
@@ -635,11 +590,12 @@ export default function App() {
 
             {/* Header Row */}
             <div className="flex justify-between items-center gap-3 pb-4 mb-5 border-b border-white/[0.08]">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#71b9ff] shadow-[0_0_12px_#71b9ff]" />
-                <span className="text-xs font-mono font-semibold uppercase tracking-[0.14em] text-[#c0d4ec]">
-                  Sequence Illuminated in 3D
-                </span>
+                <h2 className="text-base sm:text-lg font-semibold tracking-tight text-white">
+                  Your digits,{' '}
+                  <em className="italic font-serif font-normal text-[#71b9ff]">discovered.</em>
+                </h2>
               </div>
             </div>
 
@@ -667,12 +623,12 @@ export default function App() {
               <>
                 {/* Sequence Orbs Visual Trail */}
                 <div className="mb-6 p-4 rounded-xl bg-[#090f1a]/80 border border-white/[0.06] flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <div>
-                    <div className="text-[10px] font-mono uppercase tracking-[0.12em] text-[#7d8fa6] mb-1">
-                      Active Sequence Trail
+                  <div className="text-center sm:text-left">
+                    <div className="text-[10px] font-mono uppercase tracking-[0.14em] text-[#7d8fa6] mb-1">
+                      YOUR NUMBER
                     </div>
-                    <div className="text-xl font-bold font-mono tracking-wider text-white">
-                      "{matchResult.query}"
+                    <div className="text-xl sm:text-2xl font-bold font-mono tracking-wider text-[#71b9ff]">
+                      {matchResult.query}
                     </div>
                   </div>
 
@@ -695,26 +651,26 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 4-Column Glass Stat Cards (Expanded Stream Position Card Width) */}
+                {/* 4-Column Glass Stat Cards (All dynamic values unified in #71b9ff) */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1.15fr_1.15fr_1.55fr_1.05fr] gap-3.5 mb-5">
                   <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06] min-w-0 overflow-hidden">
                     <div className="text-[10px] font-mono uppercase tracking-wider text-[#7d8fa6]">
-                      Fibonacci Term
+                      FIBONACCI TERM
                     </div>
                     <div className="text-lg sm:text-xl md:text-2xl font-bold font-mono text-[#71b9ff] mt-1 whitespace-nowrap">
                       F({matchResult.n.toLocaleString('en-US')})
                     </div>
                     <div className="text-[11px] text-[#6e7e94] mt-1">
-                      The {matchResult.n === 0 ? '1st' : `${(matchResult.n + 1).toLocaleString('en-US')}th`} term
+                      Index starts at F₀ = 0
                     </div>
                   </div>
 
                   <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06] min-w-0 overflow-hidden">
                     <div className="text-[10px] font-mono uppercase tracking-wider text-[#7d8fa6]">
-                      Position in F({matchResult.n.toLocaleString('en-US')})
+                      POSITION IN TERM
                     </div>
-                    <div className="text-lg sm:text-xl md:text-2xl font-bold font-mono text-white mt-1 whitespace-nowrap">
-                      #{matchResult.pos.toLocaleString('en-US')}
+                    <div className="text-lg sm:text-xl md:text-2xl font-bold font-mono text-[#71b9ff] mt-1 whitespace-nowrap">
+                      {matchResult.pos.toLocaleString('en-US')}
                     </div>
                     <div className="text-[11px] text-[#6e7e94] mt-1">
                       1-based digit index
@@ -723,10 +679,10 @@ export default function App() {
 
                   <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06] min-w-0 overflow-hidden">
                     <div className="text-[10px] font-mono uppercase tracking-wider text-[#7d8fa6]">
-                      Stream Position
+                      STREAM POSITION
                     </div>
-                    <div className="text-lg sm:text-xl md:text-[22px] font-bold font-mono text-[#f0c978] mt-1 whitespace-nowrap tracking-tight">
-                      #{matchResult.streamPos.toLocaleString('en-US')}
+                    <div className="text-lg sm:text-xl md:text-[22px] font-bold font-mono text-[#71b9ff] mt-1 whitespace-nowrap tracking-tight">
+                      {matchResult.streamPos.toLocaleString('en-US')}
                     </div>
                     <div className="text-[11px] text-[#6e7e94] mt-1">
                       in 0112358... sequence
@@ -735,9 +691,9 @@ export default function App() {
 
                   <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06] min-w-0 overflow-hidden">
                     <div className="text-[10px] font-mono uppercase tracking-wider text-[#7d8fa6]">
-                      Term Length
+                      TERM LENGTH
                     </div>
-                    <div className="text-lg sm:text-xl md:text-2xl font-bold font-mono text-[#a4b5cb] mt-1 whitespace-nowrap">
+                    <div className="text-lg sm:text-xl md:text-2xl font-bold font-mono text-[#71b9ff] mt-1 whitespace-nowrap">
                       {matchResult.termLength.toLocaleString('en-US')}
                     </div>
                     <div className="text-[11px] text-[#6e7e94] mt-1">
@@ -754,7 +710,7 @@ export default function App() {
                       Complete Term F({matchResult.n.toLocaleString('en-US')})
                     </span>
                     <span className="text-[#a4b5cb]">
-                      {matchResult.termLength.toLocaleString('en-US')} Digits (Full Term) · Found at digit #{matchResult.pos.toLocaleString('en-US')}
+                      {matchResult.termLength.toLocaleString('en-US')} Digits
                     </span>
                   </div>
 
@@ -806,66 +762,193 @@ export default function App() {
                       <span>Clear Search</span>
                     </button>
                   </div>
-
-                  <span className="text-[11px] text-[#657386] font-mono">
-                    Digits counted starting from index 1.
-                  </span>
                 </div>
               </>
             )}
           </section>
         )}
 
-        {/* Collapsible Architecture Guide */}
-        {aboutOpen && (
-          <section className="max-w-[780px] mx-auto mt-6 glass-panel rounded-2xl p-6 text-[#9eb0c6] text-[13px] leading-relaxed animate-rise">
-            <h2 className="text-sm text-white font-semibold mb-3 flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-[#71b9ff]" />
-              The Architecture of the 3D Glass Orbs Swirl
-            </h2>
-            <p className="my-2">
-              The Fibonacci sequence is defined by <code className="text-[#71b9ff] font-mono">F(0) = 0, F(1) = 1, F(n) = F(n−1) + F(n−2)</code>. As numbers grow, their consecutive ratio converges to the Golden Ratio <code className="text-[#f0c978] font-mono">Φ ≈ 1.6180339887...</code>.
+        {/* "What's This?" Section — Matching Reference Images + Relocated Orb Color System + LinkedIn */}
+        <section
+          id="whats-this"
+          ref={whatsThisSectionRef}
+          className="max-w-[980px] mx-auto mt-14 sm:mt-20 pt-10 sm:pt-14 border-t border-white/[0.07]"
+        >
+          {/* Top Editorial Grid (Matching Reference Image 3) */}
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.18fr] gap-10 lg:gap-16 items-start">
+            {/* Left Column */}
+            <div>
+              <div className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.28em] text-[#5caeff] mb-5">
+                BEAUTY IN THE PATTERN
+              </div>
+
+              <h2 className="text-[32px] sm:text-[44px] font-semibold tracking-[-0.035em] leading-[1.12] text-white">
+                Simple beginnings.
+                <br />
+                <span className="text-[#4da3ff]">Endless possibility.</span>
+              </h2>
+
+              <p className="text-[#7889a1] text-sm sm:text-[15px] leading-[1.75] mt-6 max-w-[380px]">
+                Start with zero and one. Add the last two numbers. Repeat. A universe of patterns emerges.
+              </p>
+
+              <div className="mt-8 font-serif italic text-2xl sm:text-[30px] text-[#5caeff] tracking-wide select-none">
+                F<sub className="text-sm not-italic font-mono">n</sub> = F
+                <sub className="text-sm not-italic font-mono">n−1</sub> + F
+                <sub className="text-sm not-italic font-mono">n−2</sub>
+              </div>
+            </div>
+
+            {/* Right Column: 01, 02, 03 Breakdown */}
+            <div className="flex flex-col">
+              <div className="pb-7 border-b border-[#142238] flex items-start gap-6 sm:gap-8">
+                <span className="text-xs font-mono text-[#5caeff] pt-1 shrink-0">01</span>
+                <div>
+                  <h3 className="text-base sm:text-[18px] font-medium text-white mb-2">
+                    A number that means something.
+                  </h3>
+                  <p className="text-xs sm:text-[13.5px] text-[#7889a1] leading-relaxed">
+                    A date, a lucky number, or a string of zeros. Enter any 1–8 digits; leading zeros stay exactly as they are.
+                  </p>
+                </div>
+              </div>
+
+              <div className="py-7 border-b border-[#142238] flex items-start gap-6 sm:gap-8">
+                <span className="text-xs font-mono text-[#5caeff] pt-1 shrink-0">02</span>
+                <div>
+                  <h3 className="text-base sm:text-[18px] font-medium text-white mb-2">
+                    Find its very first appearance.
+                  </h3>
+                  <p className="text-xs sm:text-[13.5px] text-[#7889a1] leading-relaxed">
+                    We check each Fibonacci term in order, starting at F₀ = 0. Your digits must appear together inside one term.
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-7 pb-7 border-b border-[#142238] flex items-start gap-6 sm:gap-8">
+                <span className="text-xs font-mono text-[#5caeff] pt-1 shrink-0">03</span>
+                <div>
+                  <h3 className="text-base sm:text-[18px] font-medium text-white mb-2">
+                    See your place in the sequence.
+                  </h3>
+                  <p className="text-xs sm:text-[13.5px] text-[#7889a1] leading-relaxed">
+                    Discover the term, the position inside it, and its place in the stream formed by joining every term. Digit positions start at 1.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* "What am I looking at?" Detailed Explanation Card (Matching Reference Image 4) */}
+          <div className="mt-12 p-6 sm:p-8 rounded-2xl bg-[#080d18]/90 border border-[#192841] text-[#b4c3d8]">
+            <h3 className="text-lg sm:text-xl font-bold text-white mb-4">
+              What am I looking at?
+            </h3>
+            <div className="space-y-3.5 text-xs sm:text-[14.5px] leading-relaxed text-[#9fb0c7]">
+              <p>
+                The Fibonacci sequence starts{' '}
+                <code className="text-[#71b9ff] font-mono">0, 1, 1, 2, 3, 5, 8, 13…</code>. Each new term is the sum of the previous two.
+              </p>
+              <p>
+                This page checks each term in order and stops at the first term containing your digits consecutively. It then finds the first position of that exact string inside the term. For example, a position of 4 means the match begins at the fourth digit.
+              </p>
+              <p>
+                Term indices start at <code className="text-[#71b9ff] font-mono">F(0) = 0</code>; digit positions start at <code className="text-[#71b9ff] font-mono">1</code>. Leading zeroes in your search are preserved. In the 3D spiral above, each decimal digit is rendered as a refractive glass orb—and when your number is found, its matching orbs illuminate with planetary rings in 3D space.
+              </p>
+            </div>
+          </div>
+
+          {/* Relocated Orb Colour System (Moved from Hero Section into What's This?) */}
+          <div className="mt-8 glass-panel rounded-2xl p-5 sm:p-6 text-center">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-3.5 mb-4 border-b border-white/[0.06] text-xs">
+              <span className="font-medium text-[#c5d3e8] flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#71b9ff] shadow-[0_0_8px_#71b9ff]" />
+                Orb Colour System
+              </span>
+              <span className="text-[#7d8fa6] font-mono text-[11px]">
+                Uniform Size · Digit Codes 0–9
+              </span>
+            </div>
+
+            {/* 10 Glowing Glass Orbs */}
+            <div className="grid grid-cols-5 sm:grid-cols-10 gap-2 sm:gap-3 py-1">
+              {DIGIT_RULES.map((rule) => (
+                <button
+                  key={rule.digit}
+                  type="button"
+                  onClick={() => {
+                    setInputValue((prev) => {
+                      if (prev.length >= 8) return prev;
+                      const next = (prev + String(rule.digit)).slice(0, 8);
+                      setPreviewQuery(next);
+                      return next;
+                    });
+                    searchBarRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }}
+                  className="flex flex-col items-center gap-2 p-2.5 rounded-xl bg-white/[0.02] hover:bg-white/[0.08] border border-white/[0.05] hover:border-[#71b9ff]/40 transition group cursor-pointer"
+                  title={`Click to add digit ${rule.digit} (${rule.name})`}
+                >
+                  <span
+                    className="w-6 h-6 sm:w-7 sm:h-7 rounded-full glass-orb transition duration-200 group-hover:scale-110"
+                    style={{
+                      backgroundColor: rule.color,
+                      color: rule.color,
+                    }}
+                  />
+                  <div className="flex flex-col items-center">
+                    <span className="font-mono text-xs font-bold text-white group-hover:text-[#71b9ff]">
+                      {rule.digit}
+                    </span>
+                    <span className="text-[9px] text-[#718299] truncate max-w-[54px] hidden sm:inline">
+                      {rule.name.split(' ')[0]}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <p className="text-[12px] text-[#7d8fa6] mt-3.5 italic font-sans">
+              Every sequence is a continuous trail of these glassy orbs glowing in the 3D swirl.
             </p>
-            <p className="my-2">
-              In this 3D visualization, each node represents an individual digit mapped onto a logarithmic Golden Spiral. Every digit (0 through 9) is represented by a uniform glass orb with a distinctive refractive color.
-            </p>
-            <p className="my-2">
-              When you enter a sequence, the engine scans the sequence in real time and highlights the exact trail of glass orbs in 3D with glowing illumination and dynamic camera fly-through.
-            </p>
-          </section>
-        )}
+          </div>
+
+          {/* Creator & LinkedIn Connection Inside "What's This?" */}
+          <div className="mt-8 flex items-center justify-between flex-wrap gap-4 px-1">
+            <span className="text-xs text-[#6f829a] font-mono">
+              Crafted with curiosity for the infinite Fibonacci sequence.
+            </span>
+
+            <a
+              href="https://www.linkedin.com/in/manaschandra0710"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Connect with Manas Chandra on LinkedIn (opens in a new tab)"
+              title="Manas Chandra on LinkedIn"
+              className="group inline-flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-[#0b1528]/90 hover:bg-[#71b9ff]/15 border border-[#71b9ff]/30 hover:border-[#71b9ff]/70 text-[#9ecbff] hover:text-white shadow-[0_0_16px_rgba(113,185,255,0.16)] hover:shadow-[0_0_24px_rgba(113,185,255,0.4)] transition-all duration-300 hover:-translate-y-0.5"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                className="w-4 h-4 fill-current text-[#71b9ff] group-hover:scale-110 transition-transform duration-200"
+                aria-hidden="true"
+              >
+                <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z" />
+              </svg>
+              <span className="text-xs font-mono tracking-wide">LinkedIn</span>
+            </a>
+          </div>
+        </section>
       </main>
 
       {/* Footer */}
       <footer className="flex justify-between items-center gap-3 mt-12 pt-4 border-t border-white/[0.06] text-[#5d6c80] text-[11px] tracking-wider font-mono uppercase">
         <span>F(n) = F(n−1) + F(n−2)</span>
-        <div className="flex items-center gap-4">
-          <button
-            type="button"
-            onClick={() => {
-              setAboutOpen(!aboutOpen);
-            }}
-            className="border-0 bg-transparent text-[#8298b4] hover:text-[#71b9ff] cursor-pointer font-inherit tracking-inherit uppercase transition"
-          >
-            {aboutOpen ? 'Close Guide ↑' : 'What is this?'}
-          </button>
-          <a
-            href="https://www.linkedin.com/in/manaschandra0710"
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Connect with Manas Chandra on LinkedIn (opens in a new tab)"
-            title="Manas Chandra on LinkedIn"
-            className="p-1.5 rounded-lg bg-white/[0.03] hover:bg-[#71b9ff]/15 border border-white/[0.08] hover:border-[#71b9ff]/50 text-[#8298b4] hover:text-[#71b9ff] hover:shadow-[0_0_12px_rgba(113,185,255,0.28)] transition duration-200 flex items-center justify-center"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              className="w-3.5 h-3.5 fill-current"
-              aria-hidden="true"
-            >
-              <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z" />
-            </svg>
-          </a>
-        </div>
+        <button
+          type="button"
+          onClick={scrollToWhatsThis}
+          className="border-0 bg-transparent text-[#8298b4] hover:text-[#71b9ff] cursor-pointer font-inherit tracking-inherit uppercase transition"
+        >
+          What's this?
+        </button>
       </footer>
 
       {/* Share Modal Dialog */}

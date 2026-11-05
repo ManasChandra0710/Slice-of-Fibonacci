@@ -8,7 +8,7 @@ import {
   DIGIT_RULES,
   FibonacciMatchResult,
 } from '../math/fibonacci';
-import { ZoomIn, ZoomOut, RotateCcw, Sparkles, Move, Compass } from 'lucide-react';
+import { ZoomIn, ZoomOut, RotateCcw, Move, Compass } from 'lucide-react';
 
 interface FibonacciCanvasProps {
   matchResult: FibonacciMatchResult | null;
@@ -195,7 +195,7 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
 
     const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
 
-    // --- 5. Procedural Digit Badge Textures ---
+    // --- 5. Procedural Digit Badge & Saturn Planetary Ring Textures ---
     const createMatchedDigitBadgeTexture = (digit: number, hexColor: string) => {
       const canvas = document.createElement('canvas');
       canvas.width = 128;
@@ -239,6 +239,38 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     const badgeTextures = DIGIT_RULES.map((rule) =>
       createMatchedDigitBadgeTexture(rule.digit, rule.color)
     );
+
+    // Concentric Saturn-like Planetary Ring Texture
+    const createSaturnRingTexture = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 256;
+      const ctx = canvas.getContext('2d')!;
+      const cx = 128;
+      const cy = 128;
+
+      // Radial gradient from inner ring edge (r=58) to outer ring edge (r=124)
+      const grad = ctx.createRadialGradient(cx, cy, 56, cx, cy, 126);
+      grad.addColorStop(0.0, 'rgba(255, 255, 255, 0.0)');
+      grad.addColorStop(0.08, 'rgba(255, 255, 255, 0.95)');
+      grad.addColorStop(0.22, 'rgba(190, 228, 255, 0.85)');
+      grad.addColorStop(0.42, 'rgba(113, 185, 255, 0.45)');
+      // Subtle Cassini-style division gap
+      grad.addColorStop(0.52, 'rgba(15, 30, 55, 0.12)');
+      grad.addColorStop(0.60, 'rgba(255, 255, 255, 0.92)');
+      grad.addColorStop(0.78, 'rgba(158, 208, 255, 0.72)');
+      grad.addColorStop(0.92, 'rgba(113, 185, 255, 0.4)');
+      grad.addColorStop(1.0, 'rgba(113, 185, 255, 0.0)');
+
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 256, 256);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = maxAnisotropy;
+      return texture;
+    };
+    const saturnRingTexture = createSaturnRingTexture();
 
     // Subtle Halo Glow Texture
     const createHaloTexture = () => {
@@ -316,7 +348,7 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     spiralLine.frustumCulled = false;
     scene.add(spiralLine);
 
-    // --- 8. Highlighting Rig ---
+    // --- 8. Highlighting Rig (Saturn Planetary Rings + Digit Badges + Halos) ---
     const highlightGroup = new THREE.Group();
     scene.add(highlightGroup);
 
@@ -325,11 +357,12 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
     const haloSprites: THREE.Sprite[] = [];
     const microRings: THREE.Mesh[] = [];
 
-    const sharedRingGeometry = new THREE.RingGeometry(0.38, 0.46, 32);
+    // Saturn-proportioned planetary ring geometry around matched orbs (orb radius is ~0.35 when highlighted)
+    const sharedRingGeometry = new THREE.RingGeometry(0.42, 0.78, 64);
     const sharedHaloMaterial = new THREE.SpriteMaterial({
       map: orbHaloTexture,
       transparent: true,
-      opacity: 0.65,
+      opacity: 0.68,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
@@ -341,27 +374,30 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
         depthTest: false,
       });
       const bSprite = new THREE.Sprite(bMat);
-      bSprite.scale.set(1.14, 1.14, 1.14);
+      bSprite.scale.set(1.12, 1.12, 1.12);
       bSprite.renderOrder = 20;
       bSprite.visible = false;
       highlightGroup.add(bSprite);
       badgeSprites.push(bSprite);
 
       const hSprite = new THREE.Sprite(sharedHaloMaterial.clone());
-      hSprite.scale.set(2.1, 2.1, 2.1);
+      hSprite.scale.set(2.2, 2.2, 2.2);
       hSprite.visible = false;
       highlightGroup.add(hSprite);
       haloSprites.push(hSprite);
 
       const rMat = new THREE.MeshBasicMaterial({
-        color: 0x71b9ff,
+        map: saturnRingTexture,
+        color: 0x9ecbff,
         side: THREE.DoubleSide,
         transparent: true,
-        opacity: 0.75,
+        opacity: 0.95,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
+        depthTest: true,
       });
       const ringMesh = new THREE.Mesh(sharedRingGeometry, rMat);
+      ringMesh.rotation.order = 'YXZ';
       ringMesh.visible = false;
       highlightGroup.add(ringMesh);
       microRings.push(ringMesh);
@@ -443,7 +479,7 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
         const rule = DIGIT_RULES[digit];
 
         const isMatchedOrb = hasMatch && i >= matchStart && i < matchEnd;
-        const orbScale = isMatchedOrb ? 1.32 : 0.96;
+        const orbScale = isMatchedOrb ? 1.36 : 0.96;
 
         _vec3.set(ox, oy, oz);
         _scaleVec.set(orbScale, orbScale, orbScale);
@@ -452,7 +488,7 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
 
         _color.setHex(rule.hex);
         if (hasMatch && !isMatchedOrb) {
-          _color.multiplyScalar(0.75);
+          _color.multiplyScalar(0.72);
         }
         instancedMesh.setColorAt(i, _color);
       }
@@ -465,7 +501,7 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
       linePosAttr.needsUpdate = true;
       lineGeo.setDrawRange(0, count);
 
-      // Update badges and compute front-facing viewpoint if a match is active
+      // Update Saturn rings, digit badges, and front-facing camera viewpoint if a match is active
       if (hasMatch) {
         const trailLen = Math.min(maxBadges, allocation.matchLength);
         const conduitAttr = conduitLine.geometry.attributes.position as THREE.BufferAttribute;
@@ -484,7 +520,7 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
             const bSprite = badgeSprites[b];
             bSprite.material.map = badgeTextures[digit];
             bSprite.material.needsUpdate = true;
-            bSprite.position.set(ox, oy + 0.95, oz);
+            bSprite.position.set(ox, oy + 0.98, oz);
             bSprite.visible = true;
 
             const hSprite = haloSprites[b];
@@ -728,8 +764,11 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
           const nodeIdx = matchStart + b;
           if (nodeIdx >= 0 && nodeIdx < count) {
             const ring = microRings[b];
-            ring.rotation.z = time * 1.4 + b * 0.5;
-            ring.rotation.y = currentThetas[nodeIdx] || 0;
+            // Orient ring like Saturn's planetary rings tilted around the orb's equator
+            const baseTheta = currentThetas[nodeIdx] || 0;
+            ring.rotation.y = baseTheta + Math.sin(time * 0.7 + b * 0.4) * 0.14;
+            ring.rotation.x = 1.18 + Math.cos(time * 0.9 + b * 0.5) * 0.06;
+            ring.rotation.z = 0.28 + Math.sin(time * 0.6 + b * 0.7) * 0.08;
           }
         }
 
@@ -804,6 +843,7 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
       window.removeEventListener('resize', onResize);
 
       orbHaloTexture.dispose();
+      saturnRingTexture.dispose();
       badgeTextures.forEach((tex) => tex.dispose());
       badgeSprites.forEach((s) => s.material.dispose());
       haloSprites.forEach((s) => s.material.dispose());
@@ -847,24 +887,6 @@ export const FibonacciCanvas: React.FC<FibonacciCanvasProps> = ({
       <div className="absolute top-2.5 right-2.5 w-3 h-3 border-t-2 border-r-2 border-[#71b9ff]/60 pointer-events-none z-10" />
       <div className="absolute bottom-2.5 left-2.5 w-3 h-3 border-b-2 border-l-2 border-[#71b9ff]/60 pointer-events-none z-10" />
       <div className="absolute bottom-2.5 right-2.5 w-3 h-3 border-b-2 border-r-2 border-[#71b9ff]/60 pointer-events-none z-10" />
-
-      {/* Top Glass Telemetry Badges */}
-      <div className="absolute left-4 top-3.5 flex items-center gap-2 pointer-events-none z-10">
-        <span className="px-2.5 py-1 rounded-full bg-[#0d1627]/90 border border-white/10 text-[#71b9ff] font-mono text-[10px] tracking-[0.14em] uppercase shadow-[0_0_15px_rgba(113,185,255,0.15)] flex items-center gap-1.5">
-          <Sparkles className="w-3 h-3 text-[#71b9ff]" />
-          3D Glass Orbs Swirl
-        </span>
-      </div>
-
-      <div className="absolute right-4 top-3.5 text-right pointer-events-none z-10 max-w-[62%]">
-        <span className="px-2.5 py-1 rounded-full bg-[#0d1627]/90 border border-white/10 text-[#8bbff0] font-mono text-[10px] tracking-wide shadow-md inline-block truncate max-w-full">
-          {matchResult
-            ? `Found "${matchResult.query}" · F(${matchResult.n.toLocaleString()}) · Pos #${matchResult.pos.toLocaleString()}`
-            : activeQuery
-            ? `PREVIEW · ${activeQuery}`
-            : 'READY · UP TO 10,000 DIGITS'}
-        </span>
-      </div>
 
       {/* Glassy Floating Zoom & Navigation Tools */}
       <div className="absolute right-4 bottom-4 flex items-center gap-1.5 z-20 pointer-events-auto">

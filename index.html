@@ -1,22 +1,88 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#090b10" />
     <title>Slice of Fibonacci</title>
-    <meta name="description" content="Every number has a story. Find where yours begins in the Fibonacci sequence." />
-    <meta property="og:title" content="Slice of Fibonacci" />
-    <meta property="og:description" content="Every number has a story. Find where yours begins in the Fibonacci sequence." />
+    <meta
+      name="description"
+      content="Every number has a story. Find where yours begins in the Fibonacci sequence."
+    />
+    <meta name="theme-color" content="#05070d" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://slice-of-fibonacci.vercel.app/" />
+
+    <!-- Favicon & App Icons (Google Search & Browser Compatible) -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192x192.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <!-- Open Graph / Social Sharing Preview (WhatsApp, LinkedIn, Discord, iMessage, Facebook) -->
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Slice of Fibonacci" />
+    <meta property="og:url" content="https://slice-of-fibonacci.vercel.app/" />
+    <meta property="og:title" content="Slice of Fibonacci" />
+    <meta
+      property="og:description"
+      content="Every number has a story. Find where yours begins in the Fibonacci sequence."
+    />
+    <meta
+      property="og:image"
+      content="https://slice-of-fibonacci.vercel.app/og-preview.png"
+    />
+    <meta
+      property="og:image:secure_url"
+      content="https://slice-of-fibonacci.vercel.app/og-preview.png"
+    />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="Slice of Fibonacci — Every number has a story. Find where yours begins in the Fibonacci sequence."
+    />
+
+    <!-- Twitter / X Large Summary Card -->
     <meta name="twitter:card" content="summary_large_image" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23090b10'/%3E%3Cpath d='M4 23 A 14 14 0 0 1 18 9 A 9 9 0 0 1 27 18 A 5.5 5.5 0 0 1 21.5 23.5 A 3.5 3.5 0 0 1 18 20 A 2 2 0 0 1 20 18 A 1.2 1.2 0 0 1 21.2 19.2' stroke='%2371b9ff' stroke-width='2.2' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='21' cy='18.8' r='1.8' fill='%23f0c978'/%3E%3C/svg%3E" />
+    <meta name="twitter:url" content="https://slice-of-fibonacci.vercel.app/" />
+    <meta name="twitter:title" content="Slice of Fibonacci" />
+    <meta
+      name="twitter:description"
+      content="Every number has a story. Find where yours begins in the Fibonacci sequence."
+    />
+    <meta
+      name="twitter:image"
+      content="https://slice-of-fibonacci.vercel.app/og-preview.png"
+    />
+    <meta
+      name="twitter:image:alt"
+      content="Slice of Fibonacci — Every number has a story. Find where yours begins in the Fibonacci sequence."
+    />
+
+    <!-- Schema.org Structured Data -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Slice of Fibonacci",
+        "url": "https://slice-of-fibonacci.vercel.app/",
+        "description": "Every number has a story. Find where yours begins in the Fibonacci sequence.",
+        "applicationCategory": "EducationalApplication",
+        "operatingSystem": "All",
+        "image": "https://slice-of-fibonacci.vercel.app/og-preview.png",
+        "author": {
+          "@type": "Person",
+          "name": "Manas Chandra",
+          "url": "https://www.linkedin.com/in/manaschandra0710"
+        }
+      }
+    </script>
   </head>
-  <body class="bg-[#090b10] text-[#f2f4f8] antialiased min-h-screen">
-    <audio id="bgm-audio" src="/audio/interstellar.mp3" preload="auto" loop></audio>
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
