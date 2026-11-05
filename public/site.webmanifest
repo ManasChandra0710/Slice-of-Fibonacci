@@ -4,14 +4,9 @@
   "description": "Every number has a story. Find where yours begins in the Fibonacci sequence.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#05070d",
-  "theme_color": "#05070d",
+  "background_color": "#020409",
+  "theme_color": "#020409",
   "icons": [
-    {
-      "src": "/favicon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml"
-    },
     {
       "src": "/favicon-48x48.png",
       "sizes": "48x48",
@@ -30,6 +25,11 @@
     {
       "src": "/apple-touch-icon.png",
       "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "256x256",
       "type": "image/png"
     }
   ]

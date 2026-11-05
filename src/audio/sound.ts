@@ -1,26 +1,20 @@
 /**
  * Interstellar Soundtrack Audio Engine
  *
- * Implements an immersive, cinematic background music experience:
+ * Implements an immersive, instant-response background music experience:
  * 1. Page Refresh / Initial Load:
  *    - Always restarts from 00:00 (beginning).
  *    - Attempts autoplay automatically on page entrance.
  *    - If blocked by browser autoplay policy, waits for the user's first genuine interaction
- *      (click, pointerdown, touchstart, keydown) and immediately starts playback from 00:00.
- *    - Strictly purges any persistent playback timestamps from localStorage/sessionStorage.
+ *      (click, pointerdown, touchstart, keydown) and starts playback from 00:00.
  *
- * 2. Tab Switching (Page Visibility API):
- *    - When the user switches tabs or minimizes the window: pauses playback and preserves current position.
- *    - When the user returns to the tab: resumes playback from the exact paused timestamp.
- *    - If user manually paused with the top-right button, respects their manual choice and keeps it paused.
+ * 2. Instant Pause & Play:
+ *    - Clicking Pause stops audible playback immediately on the same tick with zero fade-out delay.
+ *    - Cancels any active fade intervals or pending play promises so rapid clicks never cause ghost playback.
  *
- * 3. In-App Navigation & Number Search:
- *    - History API transitions (/13, /144, /) and search actions do NOT restart the music.
- *
- * 4. Audio Quality & Safety:
- *    - Single HTMLAudioElement instance; prevents ghost or overlapping audio.
- *    - Gentle volume fades to avoid audible clicks or pops.
- *    - Zero sound effects to keep the experience calm and focused.
+ * 3. Tab Switching (Page Visibility API):
+ *    - Pauses immediately when the tab is hidden and resumes from the paused timestamp on return,
+ *      unless the user manually paused playback.
  */
 
 export interface MusicState {
@@ -42,7 +36,7 @@ class InterstellarAudioEngine {
   private fadeInterval: number | null = null;
   private unlockListenerAttached: boolean = false;
   private unlockHandler: ((e: Event) => void) | null = null;
-  private activePlayPromise: Promise<void> | null = null;
+  private playbackActionId: number = 0;
   private hasInitialized: boolean = false;
   private listeners: Set<MusicStateListener> = new Set();
 
@@ -63,7 +57,6 @@ class InterstellarAudioEngine {
     if (this.hasInitialized || typeof window === 'undefined') return;
     this.hasInitialized = true;
 
-    // Purge any stored audio positions to ensure page refresh strictly restarts from 00:00
     try {
       window.sessionStorage?.removeItem('interstellar_audio_pos');
       window.sessionStorage?.removeItem('fibonacci_audio_pos');
@@ -74,9 +67,7 @@ class InterstellarAudioEngine {
     this.createAudioElement();
     this.setupVisibilityListener();
 
-    // On initial website load or page refresh: attempt to play from the beginning (00:00)
     this.playFromStart().catch(() => {
-      // Browser autoplay policy blocked unmuted playback -> listen for first user interaction
       this.setupUnlockOnFirstInteraction();
     });
   }
@@ -84,7 +75,6 @@ class InterstellarAudioEngine {
   private createAudioElement(): void {
     if (this.audio || typeof window === 'undefined') return;
 
-    // Clean up any stale audio on window to avoid duplicate instances
     const win = window as unknown as { __INTERSTELLAR_AUDIO__?: HTMLAudioElement };
     if (win.__INTERSTELLAR_AUDIO__) {
       try {
@@ -100,14 +90,12 @@ class InterstellarAudioEngine {
       this.audio.preload = 'auto';
       this.audio.volume = this.targetVolume;
 
-      // Force beginning position
       try {
         this.audio.currentTime = 0;
       } catch {}
 
       win.__INTERSTELLAR_AUDIO__ = this.audio;
 
-      // Ensure that when metadata is loaded on fresh page load, currentTime is at 00:00
       this.audio.addEventListener('loadedmetadata', () => {
         if (this.needsRestartFromStart && this.audio) {
           try {
@@ -117,6 +105,12 @@ class InterstellarAudioEngine {
       });
 
       this.audio.addEventListener('play', () => {
+        if (this.userPaused && this.audio) {
+          this.audio.pause();
+          this.isPlaying = false;
+          this.notify();
+          return;
+        }
         this.isPlaying = true;
         this.notify();
       });
@@ -131,8 +125,7 @@ class InterstellarAudioEngine {
         this.notify();
       });
 
-      this.audio.addEventListener('error', (e) => {
-        console.warn('Interstellar audio notice:', e);
+      this.audio.addEventListener('error', () => {
         this.isPlaying = false;
         this.notify();
       });
@@ -141,22 +134,16 @@ class InterstellarAudioEngine {
     }
   }
 
-  /**
-   * Listen to Page Visibility API:
-   * Pause immediately when tab/window is hidden, resume from exact position when returning.
-   */
   private setupVisibilityListener(): void {
     if (typeof document === 'undefined') return;
 
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
-        // Tab hidden or minimized: pause if actively playing without resetting playback position
         if (this.isPlaying && !this.userPaused) {
           this.pausedByVisibility = true;
-          this.pauseWithFade(false); // Visibility pause, not manual
+          this.pauseImmediately(false);
         }
       } else {
-        // Tab visible: resume from the exact position where it was paused
         if (this.pausedByVisibility && !this.userPaused) {
           this.pausedByVisibility = false;
           this.resumePlayback().catch(() => {});
@@ -165,11 +152,6 @@ class InterstellarAudioEngine {
     });
   }
 
-  /**
-   * Automatic playback unlock listener:
-   * Attached ONLY to genuine user activation events (click, pointerdown, touchstart, keydown).
-   * Once user interacts, starts playback from 00:00 and detaches all listeners.
-   */
   private setupUnlockOnFirstInteraction(): void {
     if (this.unlockListenerAttached || typeof window === 'undefined') return;
     this.unlockListenerAttached = true;
@@ -185,9 +167,7 @@ class InterstellarAudioEngine {
         .then(() => {
           this.removeUnlockListeners();
         })
-        .catch(() => {
-          // If still blocked, listener remains until an activating gesture resolves
-        });
+        .catch(() => {});
     };
 
     activationEvents.forEach((ev) => {
@@ -214,16 +194,11 @@ class InterstellarAudioEngine {
     }
   }
 
-  private fadeVolume(
-    from: number,
-    to: number,
-    durationMs: number,
-    onComplete?: () => void
-  ): void {
+  private fadeVolume(from: number, to: number, durationMs: number): void {
     if (!this.audio) return;
     this.cancelFade();
 
-    const steps = 20;
+    const steps = 12;
     const intervalMs = Math.max(16, Math.floor(durationMs / steps));
     const stepDelta = (to - from) / steps;
     let currentStep = 0;
@@ -231,7 +206,7 @@ class InterstellarAudioEngine {
     this.audio.volume = Math.max(0, Math.min(1, from));
 
     this.fadeInterval = window.setInterval(() => {
-      if (!this.audio) {
+      if (!this.audio || this.userPaused || this.audio.paused) {
         this.cancelFade();
         return;
       }
@@ -243,19 +218,15 @@ class InterstellarAudioEngine {
       if (currentStep >= steps) {
         this.audio.volume = Math.max(0, Math.min(1, to));
         this.cancelFade();
-        if (onComplete) onComplete();
       }
     }, intervalMs);
   }
 
-  /**
-   * Resets audio to beginning (00:00) and starts playback with smooth fade-in
-   */
   public async playFromStart(): Promise<void> {
     this.createAudioElement();
-    if (!this.audio) return;
+    if (!this.audio || this.userPaused) return;
 
-    if (this.userPaused) return;
+    const actionId = ++this.playbackActionId;
 
     try {
       this.cancelFade();
@@ -263,113 +234,99 @@ class InterstellarAudioEngine {
         this.audio.currentTime = 0;
       } catch {}
 
-      this.audio.volume = 0.05;
+      this.audio.volume = 0.12;
+      await this.audio.play();
 
-      const p = this.audio.play();
-      this.activePlayPromise = p;
-      await p;
-      this.activePlayPromise = null;
+      // If user clicked Pause while play() promise was resolving, stop immediately
+      if (actionId !== this.playbackActionId || this.userPaused) {
+        this.audio.pause();
+        this.isPlaying = false;
+        this.notify();
+        return;
+      }
 
       this.needsRestartFromStart = false;
       this.isPlaying = true;
       this.notify();
 
-      // Smooth volume fade-in to target volume
-      this.fadeVolume(this.audio.volume, this.targetVolume, 1000);
+      this.fadeVolume(this.audio.volume, this.targetVolume, 450);
     } catch (err) {
-      this.activePlayPromise = null;
-      this.isPlaying = false;
-      this.notify();
+      if (actionId === this.playbackActionId) {
+        this.isPlaying = false;
+        this.notify();
+      }
       throw err;
     }
   }
 
-  /**
-   * Resumes playback from current position (used when returning to tab or manual unpause)
-   */
   public async resumePlayback(): Promise<void> {
     this.createAudioElement();
-    if (!this.audio) return;
+    if (!this.audio || this.userPaused) return;
 
-    if (this.userPaused) return;
-
-    // If never started before, start from 00:00
     if (this.needsRestartFromStart) {
       return this.playFromStart();
     }
 
+    const actionId = ++this.playbackActionId;
+
     try {
       this.cancelFade();
-      this.audio.volume = 0.05;
+      this.audio.volume = this.targetVolume;
+      await this.audio.play();
 
-      const p = this.audio.play();
-      this.activePlayPromise = p;
-      await p;
-      this.activePlayPromise = null;
+      if (actionId !== this.playbackActionId || this.userPaused) {
+        this.audio.pause();
+        this.isPlaying = false;
+        this.notify();
+        return;
+      }
 
       this.isPlaying = true;
       this.notify();
-
-      this.fadeVolume(this.audio.volume, this.targetVolume, 800);
     } catch (err) {
-      this.activePlayPromise = null;
-      this.isPlaying = false;
-      this.notify();
+      if (actionId === this.playbackActionId) {
+        this.isPlaying = false;
+        this.notify();
+      }
       throw err;
     }
   }
 
   /**
-   * General playWithFade helper
-   * @param resetToStart If true, restarts playback at 00:00
+   * Stops playback immediately with zero fade-out delay.
    */
-  public async playWithFade(resetToStart: boolean = false): Promise<void> {
-    if (resetToStart || this.needsRestartFromStart) {
-      return this.playFromStart();
-    }
-    return this.resumePlayback();
-  }
+  public pauseImmediately(isManual: boolean = false): void {
+    this.playbackActionId++;
+    this.cancelFade();
 
-  /**
-   * Pauses background playback with a gentle 600ms fade-out
-   * @param isManual True if paused directly by user action (top-right control)
-   */
-  public pauseWithFade(isManual: boolean = false): void {
     if (isManual) {
       this.userPaused = true;
       this.pausedByVisibility = false;
-      this.notify(); // Immediate UI update for instant feedback
+      this.removeUnlockListeners();
     }
 
-    if (!this.audio || this.audio.paused) {
-      this.isPlaying = false;
-      this.notify();
-      return;
-    }
-
-    const currentVol = this.audio.volume;
-
-    this.fadeVolume(currentVol, 0.01, 500, () => {
-      if (this.audio) {
+    if (this.audio) {
+      try {
         this.audio.pause();
         this.audio.volume = this.targetVolume;
-      }
-      this.isPlaying = false;
-      this.notify();
-    });
+      } catch {}
+    }
+
+    this.isPlaying = false;
+    this.notify();
   }
 
-  /**
-   * Manual play/pause toggle triggered from top-right music controls
-   */
   public togglePlayPause(): boolean {
-    const isActivelyPlaying = this.isPlaying && !this.userPaused;
+    const isActivelyPlaying =
+      (this.isPlaying || (this.audio !== null && !this.audio.paused)) && !this.userPaused;
+
     if (isActivelyPlaying) {
-      this.pauseWithFade(true); // Manual user pause
+      this.pauseImmediately(true);
       return false;
     } else {
       this.userPaused = false;
       this.pausedByVisibility = false;
+      this.notify();
       this.resumePlayback().catch(() => {});
       return true;
     }
@@ -400,35 +357,15 @@ class InterstellarAudioEngine {
   }
 
   public getIsPlaying(): boolean {
-    return this.isPlaying;
+    return this.isPlaying && !this.userPaused;
   }
 
-  public getUserPaused(): boolean {
-    return this.userPaused;
-  }
-
-  // --- Compatibility methods ---
   public playInterstellar(resetToStart: boolean = false): Promise<void> {
-    return this.playWithFade(resetToStart);
+    if (resetToStart || this.needsRestartFromStart) {
+      return this.playFromStart();
+    }
+    return this.resumePlayback();
   }
-
-  public pauseInterstellar(): void {
-    this.pauseWithFade(true);
-  }
-
-  public toggleMute(): boolean {
-    const playing = this.togglePlayPause();
-    return !playing;
-  }
-
-  public getMuted(): boolean {
-    return !this.isPlaying || this.userPaused;
-  }
-
-  // Silent no-op methods ensuring zero sound effect clutter
-  public playClick(): void {}
-  public playFlySwoosh(): void {}
-  public playTargetLock(): void {}
 }
 
 export const soundEngine = InterstellarAudioEngine.getInstance();

@@ -1,7 +1,8 @@
-import { FibonacciMatchResult } from '../math/fibonacci';
+import { FibonacciMatchResult, DIGIT_RULES } from '../math/fibonacci';
 
 export const ORIGINAL_HOMEPAGE_URL = 'https://slice-of-fibonacci.vercel.app/';
-export const SHARE_CAPTION = 'Every number has a story. Find where yours begins in the Fibonacci sequence.';
+export const SHARE_CAPTION =
+  'Every number has a story. Find where yours begins in the Fibonacci sequence:';
 
 export interface GeneratedShareCard {
   canvas: HTMLCanvasElement;
@@ -10,28 +11,47 @@ export interface GeneratedShareCard {
   file: File;
 }
 
-export function getOrdinalSuffix(n: number): string {
-  const s = ['th', 'st', 'nd', 'rd'];
-  const v = n % 100;
-  return s[(v - 20) % 10] || s[v] || s[0];
+let cachedLogoImage: HTMLImageElement | null = null;
+
+function loadOfficialLogo(): Promise<HTMLImageElement | null> {
+  if (cachedLogoImage && cachedLogoImage.complete && cachedLogoImage.naturalWidth > 0) {
+    return Promise.resolve(cachedLogoImage);
+  }
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      cachedLogoImage = img;
+      resolve(img);
+    };
+    img.onerror = () => {
+      resolve(null);
+    };
+    img.src = '/logo.png';
+  });
 }
 
-function hexToRgba(hex: string, alpha: number = 1): string {
-  const clean = hex.replace('#', '');
-  const r = parseInt(clean.substring(0, 2), 16) || 0;
-  const g = parseInt(clean.substring(2, 4), 16) || 0;
-  const b = parseInt(clean.substring(4, 6), 16) || 0;
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+function fitTextFontSize(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  initialSize: number,
+  minSize: number,
+  fontWeight: string = 'bold',
+  fontFamily: string = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
+): number {
+  let size = initialSize;
+  ctx.font = `${fontWeight} ${size}px ${fontFamily}`;
+  while (ctx.measureText(text).width > maxWidth && size > minSize) {
+    size -= 2;
+    ctx.font = `${fontWeight} ${size}px ${fontFamily}`;
+  }
+  return size;
 }
 
 /**
- * Generates a high-resolution 1080x1350 share card featuring:
- * 1. Organic Golden-Ratio Nautilus Shell cross-section with 35 chambers & Vogel Sunflower Phyllotaxis core
- * 2. The searched number and its complete telemetry (Term, Position in Term, Stream Position)
- * 3. The continuous Fibonacci stream ribbon with highlighted query
- * 4. The exact original website URL and caption:
- *    "Find where your number hides in the Fibonacci Sequence:"
- *    https://slice-of-fibonacci.vercel.app/
+ * Generates a high-resolution 1080x1350 Share Result Card designed as a direct,
+ * faithful extension of the website's "Your digits, discovered." result section.
  */
 export async function generateShareCard(
   result: FibonacciMatchResult
@@ -47,427 +67,438 @@ export async function generateShareCard(
     throw new Error('Canvas 2D context is unavailable');
   }
 
-  // --- 1. Background Cosmic Dark Theme ---
-  const bgGrad = ctx.createRadialGradient(
-    width / 2,
-    300,
-    50,
-    width / 2,
-    height / 2,
-    height * 0.75
-  );
-  bgGrad.addColorStop(0, '#0c1527');
-  bgGrad.addColorStop(0.45, '#070c17');
-  bgGrad.addColorStop(1, '#03050a');
-  ctx.fillStyle = bgGrad;
+  const logoImg = await loadOfficialLogo();
+
+  // --- 1. Deep Obsidian & Midnight-Blue Atmospheric Background ---
+  ctx.fillStyle = '#020409';
   ctx.fillRect(0, 0, width, height);
 
-  // Soft atmospheric glows
-  const topGlow = ctx.createRadialGradient(width / 2, 280, 20, width / 2, 280, 300);
-  topGlow.addColorStop(0, 'rgba(113, 185, 255, 0.16)');
-  topGlow.addColorStop(0.5, 'rgba(240, 201, 120, 0.08)');
-  topGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
-  ctx.fillStyle = topGlow;
-  ctx.fillRect(0, 0, width, 600);
+  const topAmbient = ctx.createRadialGradient(width * 0.5, 260, 20, width * 0.5, 260, 560);
+  topAmbient.addColorStop(0, 'rgba(32, 88, 168, 0.24)');
+  topAmbient.addColorStop(0.55, 'rgba(12, 28, 58, 0.12)');
+  topAmbient.addColorStop(1, 'rgba(2, 4, 9, 0)');
+  ctx.fillStyle = topAmbient;
+  ctx.fillRect(0, 0, width, height);
 
-  // Delicate decorative borders
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(36, 36, width - 72, height - 72);
+  const bottomAmbient = ctx.createRadialGradient(width * 0.5, 1050, 40, width * 0.5, 1050, 520);
+  bottomAmbient.addColorStop(0, 'rgba(45, 118, 210, 0.14)');
+  bottomAmbient.addColorStop(1, 'rgba(2, 4, 9, 0)');
+  ctx.fillStyle = bottomAmbient;
+  ctx.fillRect(0, 0, width, height);
 
-  ctx.strokeStyle = 'rgba(240, 201, 120, 0.25)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(44, 44, width - 88, height - 88);
+  // --- 2. Outer Glass Console Container ---
+  const panelX = 48;
+  const panelY = 48;
+  const panelW = width - 96;
+  const panelH = height - 96;
 
-  // --- 2. Top Visual: Golden-Angle Vogel Phyllotaxis Orb Disc (Reference Visual) ---
-  const discCenterX = width / 2;
-  const discCenterY = 275;
-  const discRadius = 195;
-
-  // Layer A: Deep celestial radial backdrop
-  const nebulaGlow = ctx.createRadialGradient(
-    discCenterX,
-    discCenterY,
-    0,
-    discCenterX,
-    discCenterY,
-    discRadius + 28
-  );
-  nebulaGlow.addColorStop(0, 'rgba(113, 185, 255, 0.24)');
-  nebulaGlow.addColorStop(0.28, 'rgba(20, 38, 72, 0.92)');
-  nebulaGlow.addColorStop(0.68, 'rgba(8, 14, 26, 0.78)');
-  nebulaGlow.addColorStop(1, 'rgba(3, 5, 10, 0)');
-  ctx.fillStyle = nebulaGlow;
-  ctx.beginPath();
-  ctx.arc(discCenterX, discCenterY, discRadius + 28, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Layer B: Subtle dashed concentric Golden Ratio boundary rings
   ctx.save();
-  ctx.strokeStyle = 'rgba(240, 201, 120, 0.16)';
-  ctx.lineWidth = 1;
-  ctx.setLineDash([4, 6]);
+  const panelGrad = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+  panelGrad.addColorStop(0, 'rgba(9, 15, 28, 0.92)');
+  panelGrad.addColorStop(1, 'rgba(5, 9, 18, 0.96)');
+  ctx.fillStyle = panelGrad;
+  ctx.strokeStyle = 'rgba(113, 185, 255, 0.24)';
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(discCenterX, discCenterY, discRadius, 0, Math.PI * 2);
+  ctx.roundRect(panelX, panelY, panelW, panelH, 32);
+  ctx.fill();
   ctx.stroke();
 
-  ctx.strokeStyle = 'rgba(113, 185, 255, 0.18)';
-  ctx.setLineDash([2, 5]);
+  // Subtle top specular highlight along container
+  const topHighlight = ctx.createLinearGradient(panelX + 60, panelY, panelX + panelW - 60, panelY);
+  topHighlight.addColorStop(0, 'rgba(113, 185, 255, 0)');
+  topHighlight.addColorStop(0.5, 'rgba(113, 185, 255, 0.55)');
+  topHighlight.addColorStop(1, 'rgba(113, 185, 255, 0)');
+  ctx.strokeStyle = topHighlight;
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(discCenterX, discCenterY, discRadius * 0.6180339887, 0, Math.PI * 2);
+  ctx.moveTo(panelX + 60, panelY);
+  ctx.lineTo(panelX + panelW - 60, panelY);
   ctx.stroke();
-
-  ctx.strokeStyle = 'rgba(240, 201, 120, 0.22)';
-  ctx.setLineDash([2, 4]);
-  ctx.beginPath();
-  ctx.arc(discCenterX, discCenterY, 54, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.setLineDash([]);
   ctx.restore();
 
-  // Layer C: Soft central golden-cyan corona glow behind inner florets
-  const centerAura = ctx.createRadialGradient(
-    discCenterX,
-    discCenterY,
-    4,
-    discCenterX,
-    discCenterY,
-    78
-  );
-  centerAura.addColorStop(0, 'rgba(255, 245, 210, 0.48)');
-  centerAura.addColorStop(0.32, 'rgba(240, 201, 120, 0.22)');
-  centerAura.addColorStop(0.65, 'rgba(113, 185, 255, 0.16)');
-  centerAura.addColorStop(1, 'rgba(8, 14, 26, 0)');
-  ctx.fillStyle = centerAura;
+  const innerX = panelX + 48;
+  const innerW = panelW - 96;
+
+  // --- 3. Brand Header Row (Uploaded Website Logo + Section Heading) ---
+  const headerY = panelY + 46;
+  const logoBoxSize = 68;
+
+  ctx.save();
+  ctx.fillStyle = '#070d19';
+  ctx.strokeStyle = 'rgba(113, 185, 255, 0.45)';
+  ctx.lineWidth = 1.8;
+  ctx.shadowColor = 'rgba(113, 185, 255, 0.32)';
+  ctx.shadowBlur = 18;
   ctx.beginPath();
-  ctx.arc(discCenterX, discCenterY, 78, 0, Math.PI * 2);
+  ctx.roundRect(innerX, headerY, logoBoxSize, logoBoxSize, 16);
   ctx.fill();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
 
-  // Layer D: 520 Golden-Angle Phyllotaxis 3D Shaded Orbs (137.507764° divergence)
-  const goldenAngleRad = 137.50776405 * (Math.PI / 180);
-  const totalOrbs = 520;
-  const minOrbDist = 25;
-  const maxOrbDist = discRadius - 7;
-
-  for (let i = 1; i <= totalOrbs; i++) {
-    const norm = i / totalOrbs;
-    const angle = i * goldenAngleRad;
-    const dist = minOrbDist + Math.sqrt(norm) * (maxOrbDist - minOrbDist);
-    const ox = discCenterX + Math.cos(angle) * dist;
-    const oy = discCenterY + Math.sin(angle) * dist;
-
-    const orbR = 1.9 + Math.pow(norm, 0.46) * 3.15;
-
-    // Golden accent orbs interleaved along Fibonacci spiral arms, with electric-blue majority
-    const isGold =
-      (norm < 0.13 && i % 3 === 0) ||
-      i % 8 === 0 ||
-      (i % 13 === 0 && norm > 0.25);
-
+  if (logoImg) {
     ctx.save();
     ctx.beginPath();
-    ctx.arc(ox, oy, orbR, 0, Math.PI * 2);
-
-    const orbGrad = ctx.createRadialGradient(
-      ox - orbR * 0.32,
-      oy - orbR * 0.32,
-      orbR * 0.08,
-      ox,
-      oy,
-      orbR
-    );
-
-    if (isGold) {
-      orbGrad.addColorStop(0, '#ffffff');
-      orbGrad.addColorStop(0.45, '#f0c978');
-      orbGrad.addColorStop(1, hexToRgba('#c58f32', 0.88));
-    } else {
-      orbGrad.addColorStop(0, '#d8ecff');
-      orbGrad.addColorStop(0.48, '#5caeff');
-      orbGrad.addColorStop(1, hexToRgba('#1b58a8', 0.9));
-    }
-
-    ctx.fillStyle = orbGrad;
-    ctx.fill();
+    ctx.roundRect(innerX + 2, headerY + 2, logoBoxSize - 4, logoBoxSize - 4, 14);
+    ctx.clip();
+    ctx.drawImage(logoImg, innerX + 2, headerY + 2, logoBoxSize - 4, logoBoxSize - 4);
     ctx.restore();
   }
+  ctx.restore();
 
-  // Layer E: Luminous Central Singularity Orb & Halo Ring
+  // Brand name & kicker next to logo
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 28px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  ctx.fillText('Slice of Fibonacci', innerX + logoBoxSize + 20, headerY + 31);
+
+  ctx.fillStyle = '#71b9ff';
+  ctx.font = '600 12px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.fillText(
+    'A LITTLE CURIOSITY. AN INFINITE SEQUENCE.',
+    innerX + logoBoxSize + 20,
+    headerY + 54
+  );
+
+  // Right side of Header: "Your digits, discovered."
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '600 22px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  const discoveredText = 'discovered.';
+  ctx.font = 'italic 24px Georgia, "Times New Roman", serif';
+  const discWidth = ctx.measureText(discoveredText).width;
+
+  ctx.fillStyle = '#71b9ff';
+  ctx.fillText(discoveredText, innerX + innerW, headerY + 42);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '600 22px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  ctx.fillText('Your digits, ', innerX + innerW - discWidth - 4, headerY + 42);
+
+  // Glowing blue status dot before "Your digits,"
+  const yourDigitsWidth = ctx.measureText('Your digits, ').width;
+  const dotX = innerX + innerW - discWidth - yourDigitsWidth - 20;
   ctx.save();
-  ctx.strokeStyle = 'rgba(240, 201, 120, 0.45)';
-  ctx.lineWidth = 1.2;
+  ctx.fillStyle = '#71b9ff';
+  ctx.shadowColor = '#71b9ff';
+  ctx.shadowBlur = 12;
   ctx.beginPath();
-  ctx.arc(discCenterX, discCenterY, 19, 0, Math.PI * 2);
-  ctx.stroke();
-
-  const coreOuterGlow = ctx.createRadialGradient(
-    discCenterX,
-    discCenterY,
-    0,
-    discCenterX,
-    discCenterY,
-    24
-  );
-  coreOuterGlow.addColorStop(0, '#ffffff');
-  coreOuterGlow.addColorStop(0.38, 'rgba(240, 201, 120, 0.92)');
-  coreOuterGlow.addColorStop(0.72, 'rgba(113, 185, 255, 0.45)');
-  coreOuterGlow.addColorStop(1, 'rgba(7, 12, 24, 0)');
-  ctx.fillStyle = coreOuterGlow;
-  ctx.beginPath();
-  ctx.arc(discCenterX, discCenterY, 24, 0, Math.PI * 2);
-  ctx.fill();
-
-  const coreSphereGrad = ctx.createRadialGradient(
-    discCenterX - 3,
-    discCenterY - 3,
-    1,
-    discCenterX,
-    discCenterY,
-    12.5
-  );
-  coreSphereGrad.addColorStop(0, '#ffffff');
-  coreSphereGrad.addColorStop(0.55, '#fff0c2');
-  coreSphereGrad.addColorStop(0.85, '#f0c978');
-  coreSphereGrad.addColorStop(1, '#71b9ff');
-  ctx.fillStyle = coreSphereGrad;
-  ctx.shadowColor = 'rgba(240, 201, 120, 0.9)';
-  ctx.shadowBlur = 14;
-  ctx.beginPath();
-  ctx.arc(discCenterX, discCenterY, 12.5, 0, Math.PI * 2);
+  ctx.arc(dotX, headerY + 34, 5.5, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
-  // --- 3. Branding Header ---
+  // Header divider line
+  const dividerY = headerY + logoBoxSize + 28;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(innerX, dividerY);
+  ctx.lineTo(innerX + innerW, dividerY);
+  ctx.stroke();
+
+  // --- 4. Primary Focus Hero Card: YOUR NUMBER & Glass Orb Sequence Trail ---
+  const heroY = dividerY + 32;
+  const heroH = 260;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(7, 13, 24, 0.92)';
+  ctx.strokeStyle = 'rgba(113, 185, 255, 0.28)';
+  ctx.lineWidth = 1.8;
+  ctx.shadowColor = 'rgba(113, 185, 255, 0.14)';
+  ctx.shadowBlur = 26;
+  ctx.beginPath();
+  ctx.roundRect(innerX, heroY, innerW, heroH, 24);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  // "YOUR NUMBER" label
   ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#7d8fa6';
+  ctx.font = '600 15px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.fillText('YOUR NUMBER', width / 2, heroY + 42);
 
-  ctx.fillStyle = '#f0c978';
-  ctx.font = '600 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.shadowColor = 'rgba(240, 201, 120, 0.4)';
-  ctx.shadowBlur = 12;
-  const brandTitle = 'S L I C E   O F   F I B O N A C C I';
-  ctx.fillText(brandTitle, width / 2, 530);
-  ctx.shadowBlur = 0;
-
-  // --- 4. Prominent Searched Number ---
-  const queryStr = result.query;
-  const maxQueryWidth = width - 140;
-  let queryFontSize = 88;
-  let displayQuery = queryStr.length <= 6 ? queryStr.split('').join('  ') : queryStr;
-
-  ctx.font = `bold ${queryFontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
-  let measured = ctx.measureText(displayQuery).width;
-
-  if (measured > maxQueryWidth && queryStr.length <= 6) {
-    displayQuery = queryStr;
-    measured = ctx.measureText(displayQuery).width;
-  }
-
-  while (measured > maxQueryWidth && queryFontSize > 28) {
-    queryFontSize -= 4;
-    ctx.font = `bold ${queryFontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
-    measured = ctx.measureText(displayQuery).width;
-  }
-
-  ctx.fillStyle = '#ffffff';
-  ctx.shadowColor = 'rgba(113, 185, 255, 0.6)';
-  ctx.shadowBlur = 24;
-  ctx.fillText(displayQuery, width / 2, 625);
-  ctx.shadowBlur = 0;
-
-  // --- 5. Main Ordinal Subtitle ---
-  const ordinalStr = `${result.streamPos.toLocaleString('en-US')}${getOrdinalSuffix(result.streamPos)}`;
-  ctx.fillStyle = '#c0d4ec';
-  ctx.font = '400 28px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.fillText(
-    `the ${ordinalStr} digit of the continuous Fibonacci stream`,
-    width / 2,
-    705
+  // Searched Number Value (Primary Visual Focus, preserving leading zeros)
+  const queryDisplay =
+    result.query.length <= 6 ? result.query.split('').join(' ') : result.query;
+  const queryFontSize = fitTextFontSize(
+    ctx,
+    queryDisplay,
+    innerW - 80,
+    92,
+    46,
+    'bold'
   );
+  ctx.save();
+  ctx.fillStyle = '#71b9ff';
+  ctx.shadowColor = 'rgba(113, 185, 255, 0.55)';
+  ctx.shadowBlur = 24;
+  ctx.font = `bold ${queryFontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+  ctx.fillText(queryDisplay, width / 2, heroY + 132);
+  ctx.restore();
 
-  // --- 6. 3 Distinct Metric Cards ---
-  const cardY = 765;
-  const cardHeight = 125;
-  const cardWidth = 280;
-  const spacing = 20;
-  const totalCardsWidth = cardWidth * 3 + spacing * 2;
-  const startX = (width - totalCardsWidth) / 2;
+  // Colored Glass Orbs Trail inside Hero Card
+  const trailDigits = result.trailDigits;
+  const orbRadius = 18;
+  const orbSpacing = 62;
+  const totalTrailW = (trailDigits.length - 1) * orbSpacing;
+  const startOrbX = width / 2 - totalTrailW / 2;
+  const orbCenterY = heroY + 196;
 
-  const cardData = [
+  trailDigits.forEach((d, idx) => {
+    const ox = startOrbX + idx * orbSpacing;
+    const rule = DIGIT_RULES[d] || DIGIT_RULES[0];
+
+    ctx.save();
+    ctx.shadowColor = rule.color;
+    ctx.shadowBlur = 14;
+    const orbGrad = ctx.createRadialGradient(
+      ox - orbRadius * 0.32,
+      orbCenterY - orbRadius * 0.32,
+      orbRadius * 0.1,
+      ox,
+      orbCenterY,
+      orbRadius
+    );
+    orbGrad.addColorStop(0, '#ffffff');
+    orbGrad.addColorStop(0.38, rule.color);
+    orbGrad.addColorStop(1, '#08101e');
+
+    ctx.fillStyle = orbGrad;
+    ctx.beginPath();
+    ctx.arc(ox, orbCenterY, orbRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 15px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(String(d), ox, orbCenterY + 38);
+  });
+
+  // --- 5. 2x2 Grid of Result Metric Cards (Matching Result Section) ---
+  const gridY = heroY + heroH + 28;
+  const colGap = 24;
+  const rowGap = 22;
+  const cardW = (innerW - colGap) / 2;
+  const cardH = 152;
+
+  const metrics = [
     {
-      title: 'FIBONACCI TERM',
+      label: 'FIBONACCI TERM',
       value: `F(${result.n.toLocaleString('en-US')})`,
-      color: '#71b9ff',
-      sub: `The ${(result.n === 0 ? 1 : result.n + 1).toLocaleString('en-US')}${getOrdinalSuffix(result.n + 1)} term`,
+      sub: 'Index starts at F₀ = 0',
     },
     {
-      title: `POSITION IN F(${result.n.toLocaleString('en-US')})`,
-      value: `#${result.pos.toLocaleString('en-US')}`,
-      color: '#ffffff',
+      label: 'POSITION IN TERM',
+      value: result.pos.toLocaleString('en-US'),
       sub: '1-based digit index',
     },
     {
-      title: 'STREAM POSITION',
-      value: `#${result.streamPos.toLocaleString('en-US')}`,
-      color: '#f0c978',
+      label: 'STREAM POSITION',
+      value: result.streamPos.toLocaleString('en-US'),
       sub: 'in 0112358... sequence',
+    },
+    {
+      label: 'TERM LENGTH',
+      value: result.termLength.toLocaleString('en-US'),
+      sub: 'Total decimal digits',
     },
   ];
 
-  cardData.forEach((cd, idx) => {
-    const x = startX + idx * (cardWidth + spacing);
+  metrics.forEach((m, idx) => {
+    const col = idx % 2;
+    const row = Math.floor(idx / 2);
+    const cx = innerX + col * (cardW + colGap);
+    const cy = gridY + row * (cardH + rowGap);
 
-    ctx.fillStyle = 'rgba(13, 20, 36, 0.75)';
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.09)';
-    ctx.lineWidth = 1.2;
-
+    ctx.save();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+    ctx.strokeStyle = 'rgba(113, 185, 255, 0.16)';
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.roundRect(x, cardY, cardWidth, cardHeight, 16);
+    ctx.roundRect(cx, cy, cardW, cardH, 20);
     ctx.fill();
     ctx.stroke();
+    ctx.restore();
 
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-    ctx.beginPath();
-    ctx.moveTo(x + 20, cardY);
-    ctx.lineTo(x + cardWidth - 20, cardY);
-    ctx.stroke();
-
+    ctx.textAlign = 'left';
     ctx.fillStyle = '#7d8fa6';
-    ctx.font = '600 13px ui-monospace, SFMono-Regular, monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(cd.title, x + cardWidth / 2, cardY + 28);
+    ctx.font = '600 14px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.fillText(m.label, cx + 28, cy + 38);
 
-    ctx.fillStyle = cd.color;
-    let valFontSize = 30;
-    ctx.font = `bold ${valFontSize}px ui-monospace, SFMono-Regular, monospace`;
-    while (ctx.measureText(cd.value).width > cardWidth - 28 && valFontSize > 15) {
-      valFontSize -= 2;
-      ctx.font = `bold ${valFontSize}px ui-monospace, SFMono-Regular, monospace`;
-    }
-    ctx.fillText(cd.value, x + cardWidth / 2, cardY + 68);
+    const valSize = fitTextFontSize(ctx, m.value, cardW - 56, 42, 22, 'bold');
+    ctx.fillStyle = '#71b9ff';
+    ctx.font = `bold ${valSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+    ctx.fillText(m.value, cx + 28, cy + 92);
 
-    ctx.fillStyle = '#65768e';
-    ctx.font = '400 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText(cd.sub, x + cardWidth / 2, cardY + 102);
+    ctx.fillStyle = '#6e7e94';
+    ctx.font = '400 15px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.fillText(m.sub, cx + 28, cy + 126);
   });
 
-  // --- 7. Continuous Fibonacci Stream Visual Ribbon ---
-  const ribbonY = 930;
-  const ribbonHeight = 150;
-  const ribbonWidth = totalCardsWidth;
-  const ribbonX = startX;
-
-  ctx.fillStyle = 'rgba(8, 13, 24, 0.85)';
-  ctx.strokeStyle = 'rgba(113, 185, 255, 0.22)';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.roundRect(ribbonX, ribbonY, ribbonWidth, ribbonHeight, 20);
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.fillStyle = '#8ea1b8';
-  ctx.font = '600 14px ui-monospace, SFMono-Regular, monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText(
-    'CONTINUOUS FIBONACCI STREAM (0112358...)',
-    width / 2,
-    ribbonY + 32
-  );
-
-  const snippetBefore = result.streamSnippetBefore || '… 89';
-  const snippetAfter = result.streamSnippetAfter || '233 …';
-
-  let streamFontSize = 28;
-  ctx.font = `500 ${streamFontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-  let beforeWidth = ctx.measureText(snippetBefore).width;
-  let matchWidth = ctx.measureText(result.match).width;
-  let afterWidth = ctx.measureText(snippetAfter).width;
-
-  let pillPaddingX = 24;
-  let pillWidth = matchWidth + pillPaddingX * 2;
-  const pillHeight = 52;
-  let streamGap = 20;
-  let streamTotalWidth = beforeWidth + streamGap + pillWidth + streamGap + afterWidth;
-
-  while (streamTotalWidth > ribbonWidth - 36 && streamFontSize > 15) {
-    streamFontSize -= 2;
-    pillPaddingX = Math.max(10, pillPaddingX - 2);
-    streamGap = Math.max(10, streamGap - 2);
-    ctx.font = `500 ${streamFontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-    beforeWidth = ctx.measureText(snippetBefore).width;
-    matchWidth = ctx.measureText(result.match).width;
-    afterWidth = ctx.measureText(snippetAfter).width;
-    pillWidth = matchWidth + pillPaddingX * 2;
-    streamTotalWidth = beforeWidth + streamGap + pillWidth + streamGap + afterWidth;
-  }
-
-  const streamStartX = (width - streamTotalWidth) / 2;
-  const centerY = ribbonY + 95;
-
-  ctx.fillStyle = '#7a8c9e';
-  ctx.font = `500 ${streamFontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-  ctx.textAlign = 'left';
-  ctx.fillText(snippetBefore, streamStartX, centerY);
-
-  const pillX = streamStartX + beforeWidth + streamGap;
-  const pillY = centerY - pillHeight / 2;
+  // --- 6. Complete Term Highlighted Excerpt Panel ---
+  const termBoxY = gridY + cardH * 2 + rowGap + 28;
+  const termBoxH = 210;
 
   ctx.save();
-  const pillGrad = ctx.createLinearGradient(pillX, pillY, pillX + pillWidth, pillY + pillHeight);
-  pillGrad.addColorStop(0, '#f0c978');
-  pillGrad.addColorStop(1, '#e5b85c');
-  ctx.fillStyle = pillGrad;
-  ctx.shadowColor = 'rgba(240, 201, 120, 0.7)';
-  ctx.shadowBlur = 18;
-  ctx.beginPath();
-  ctx.roundRect(pillX, pillY, pillWidth, pillHeight, 12);
-  ctx.fill();
-
-  ctx.strokeStyle = '#ffffff';
+  ctx.fillStyle = '#060a14';
+  ctx.strokeStyle = 'rgba(113, 185, 255, 0.18)';
   ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(innerX, termBoxY, innerW, termBoxH, 20);
+  ctx.fill();
   ctx.stroke();
-
-  ctx.fillStyle = '#080d18';
-  ctx.font = `bold ${Math.max(16, streamFontSize + 2)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-  ctx.textAlign = 'center';
-  ctx.shadowBlur = 0;
-  ctx.fillText(result.match, pillX + pillWidth / 2, centerY);
   ctx.restore();
 
-  ctx.fillStyle = '#7a8c9e';
-  ctx.font = `500 ${streamFontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-  ctx.textAlign = 'left';
-  ctx.fillText(snippetAfter, pillX + pillWidth + streamGap, centerY);
-
-  // --- 8. Footer & Original Website Link ---
-  // Exact required caption: "Find where your number hides in the Fibonacci Series:"
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#9eb2c9';
-  ctx.font = '500 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.fillText(SHARE_CAPTION, width / 2, 1165);
-
-  // Exact required original homepage URL: "https://slice-of-fibonacci.vercel.app/"
-  ctx.fillStyle = '#f0c978';
-  ctx.font = 'bold 26px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.shadowColor = 'rgba(240, 201, 120, 0.45)';
-  ctx.shadowBlur = 12;
-  ctx.fillText(ORIGINAL_HOMEPAGE_URL, width / 2, 1210);
-  ctx.shadowBlur = 0;
-
-  // Mini Golden Spiral Emblem Icon at the very bottom
-  const iconY = 1265;
-  ctx.strokeStyle = 'rgba(240, 201, 120, 0.4)';
-  ctx.lineWidth = 1.5;
+  // Term box header row
+  const termHeaderY = termBoxY + 38;
+  ctx.save();
+  ctx.fillStyle = '#71b9ff';
+  ctx.shadowColor = '#71b9ff';
+  ctx.shadowBlur = 8;
   ctx.beginPath();
-  ctx.arc(width / 2, iconY, 12, 0, Math.PI * 2);
+  ctx.arc(innerX + 28, termHeaderY - 5, 4.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#9bd3ff';
+  ctx.font = '600 14px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.fillText(
+    `COMPLETE TERM F(${result.n.toLocaleString('en-US')})`,
+    innerX + 42,
+    termHeaderY
+  );
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#a4b5cb';
+  ctx.font = '600 14px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.fillText(
+    `${result.termLength.toLocaleString('en-US')} DIGITS`,
+    innerX + innerW - 24,
+    termHeaderY
+  );
+
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(innerX + 24, termHeaderY + 18);
+  ctx.lineTo(innerX + innerW - 24, termHeaderY + 18);
   ctx.stroke();
 
-  ctx.fillStyle = '#71b9ff';
-  ctx.beginPath();
-  ctx.arc(width / 2, iconY, 4, 0, Math.PI * 2);
-  ctx.fill();
+  // Build readable centered context around the matched digits inside F(n)
+  const maxContextChars = 16;
+  const rawBefore = result.before || '';
+  const rawAfter = result.after || '';
+  const beforeSlice =
+    rawBefore.length > maxContextChars
+      ? '…' + rawBefore.slice(-maxContextChars)
+      : rawBefore;
+  const afterSlice =
+    rawAfter.length > maxContextChars
+      ? rawAfter.slice(0, maxContextChars) + '…'
+      : rawAfter;
 
-  // --- 9. Export to Blob and File ---
+  let seqFontSize = 30;
+  ctx.font = `500 ${seqFontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  let bWidth = ctx.measureText(beforeSlice).width;
+  ctx.font = `bold ${seqFontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  let mWidth = ctx.measureText(result.match).width;
+  ctx.font = `500 ${seqFontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  let aWidth = ctx.measureText(afterSlice).width;
+
+  const badgePadX = 18;
+  const badgeGap = 10;
+  let totalSeqW =
+    (beforeSlice ? bWidth + badgeGap : 0) +
+    (mWidth + badgePadX * 2) +
+    (afterSlice ? badgeGap + aWidth : 0);
+
+  while (totalSeqW > innerW - 64 && seqFontSize > 16) {
+    seqFontSize -= 2;
+    ctx.font = `500 ${seqFontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    bWidth = ctx.measureText(beforeSlice).width;
+    ctx.font = `bold ${seqFontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    mWidth = ctx.measureText(result.match).width;
+    ctx.font = `500 ${seqFontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    aWidth = ctx.measureText(afterSlice).width;
+    totalSeqW =
+      (beforeSlice ? bWidth + badgeGap : 0) +
+      (mWidth + badgePadX * 2) +
+      (afterSlice ? badgeGap + aWidth : 0);
+  }
+
+  const seqCenterY = termBoxY + 132;
+  let cursorX = width / 2 - totalSeqW / 2;
+
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+
+  if (beforeSlice) {
+    ctx.fillStyle = '#8b9db5';
+    ctx.font = `500 ${seqFontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    ctx.fillText(beforeSlice, cursorX, seqCenterY);
+    cursorX += bWidth + badgeGap;
+  }
+
+  // Highlighted Match Pill (Exact Result Section <mark> styling)
+  const pillW = mWidth + badgePadX * 2;
+  const pillH = seqFontSize + 24;
+  const pillY = seqCenterY - pillH / 2;
+
+  ctx.save();
+  ctx.fillStyle = '#16355b';
+  ctx.strokeStyle = '#71b9ff';
+  ctx.lineWidth = 2;
+  ctx.shadowColor = 'rgba(113, 185, 255, 0.5)';
+  ctx.shadowBlur = 18;
+  ctx.beginPath();
+  ctx.roundRect(cursorX, pillY, pillW, pillH, 10);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `bold ${seqFontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  ctx.textAlign = 'center';
+  ctx.fillText(result.match, cursorX + pillW / 2, seqCenterY + 1);
+  cursorX += pillW + badgeGap;
+
+  if (afterSlice) {
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#8b9db5';
+    ctx.font = `500 ${seqFontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    ctx.fillText(afterSlice, cursorX, seqCenterY);
+  }
+
+  // --- 7. Bottom Footer Bar ---
+  const footerY = termBoxY + termBoxH + 46;
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#8ea1b8';
+  ctx.font = '400 17px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  ctx.fillText(
+    'Every number has a story. Find where yours begins in the Fibonacci sequence.',
+    innerX,
+    footerY
+  );
+
+  ctx.fillStyle = '#71b9ff';
+  ctx.font = 'bold 20px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.fillText(ORIGINAL_HOMEPAGE_URL, innerX, footerY + 34);
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#5c708a';
+  ctx.font = '600 15px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.fillText('F(n) = F(n−1) + F(n−2)', innerX + innerW, footerY + 34);
+
+  // --- 8. Export to Blob and File ---
   const dataUrl = canvas.toDataURL('image/png');
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((b) => {

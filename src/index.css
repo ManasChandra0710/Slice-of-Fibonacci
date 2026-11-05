@@ -1,19 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #05070d;
-  --bg-gradient: radial-gradient(ellipse at 50% 20%, #0d1a30 0%, #05070d 75%);
+  --bg: #020409;
   --ink: #f2f4f8;
   --muted: #8e96a5;
   --blue: #71b9ff;
   --blue2: #2c83d6;
   --gold: #f0c978;
-  --panel: rgba(14, 21, 35, 0.7);
-  --line: rgba(255, 255, 255, 0.08);
+  --panel: rgba(8, 13, 24, 0.78);
+  --line: rgba(113, 185, 255, 0.14);
 }
 
 html {
-  background-color: #05070d;
+  background-color: #020409;
   scroll-behavior: smooth;
   overflow-y: auto;
   overflow-x: hidden;
@@ -21,10 +20,13 @@ html {
 
 body {
   margin: 0;
-  background-color: #05070d;
-  background-image: radial-gradient(rgba(113, 185, 255, 0.05) 1px, transparent 1px),
-                    radial-gradient(ellipse at 50% -10%, #0c1b33 0%, transparent 65%);
-  background-size: 28px 28px, 100% 100%;
+  background-color: #020409;
+  background-image:
+    radial-gradient(ellipse 68% 52% at 72% 38%, rgba(28, 76, 148, 0.18) 0%, rgba(10, 24, 52, 0.08) 48%, transparent 78%),
+    radial-gradient(ellipse 75% 50% at 28% 18%, rgba(18, 46, 94, 0.16) 0%, transparent 72%),
+    radial-gradient(ellipse 90% 65% at 50% 85%, rgba(12, 28, 58, 0.15) 0%, transparent 80%),
+    linear-gradient(180deg, #020409 0%, #040812 45%, #020409 100%);
+  background-attachment: fixed;
   color: var(--ink);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   min-height: 100vh;
@@ -38,38 +40,38 @@ body {
   height: 7px;
 }
 ::-webkit-scrollbar-track {
-  background: #05070d;
+  background: #020409;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1e283b;
+  background: #172338;
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #2e3e5c;
+  background: #273b5e;
 }
 
-/* Modern Glassmorphic Utilities */
+/* Modern Glassmorphic Utilities Matched to Reference Background */
 .glass-panel {
-  background: rgba(13, 19, 32, 0.72);
+  background: linear-gradient(180deg, rgba(9, 15, 28, 0.82) 0%, rgba(5, 9, 18, 0.88) 100%);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(113, 185, 255, 0.13);
+  box-shadow: 0 22px 55px rgba(0, 0, 0, 0.72), 0 0 28px rgba(45, 125, 220, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
 .glass-panel-glow {
-  background: rgba(14, 21, 36, 0.78);
+  background: linear-gradient(180deg, rgba(10, 17, 32, 0.86) 0%, rgba(6, 10, 20, 0.92) 100%);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(113, 185, 255, 0.25);
-  box-shadow: 0 15px 45px rgba(0, 0, 0, 0.6), 0 0 25px rgba(113, 185, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(113, 185, 255, 0.26);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.75), 0 0 32px rgba(113, 185, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 /* Glass Orb Element in UI */
 .glass-orb {
   position: relative;
   border-radius: 50%;
-  box-shadow: inset -2px -2px 6px rgba(0, 0, 0, 0.4),
+  box-shadow: inset -2px -2px 6px rgba(0, 0, 0, 0.45),
               inset 2px 2px 5px rgba(255, 255, 255, 0.55),
               0 0 14px currentColor;
 }
@@ -86,14 +88,15 @@ body {
 
 .scale-visual-container {
   position: relative;
-  height: 440px;
+  height: 460px;
   max-width: 960px;
-  margin: 32px auto 16px;
+  margin: 32px auto 20px;
   overflow: hidden;
-  border-radius: 20px;
-  border: 1px solid rgba(113, 185, 255, 0.22);
-  background: radial-gradient(ellipse at 50% 50%, #0c182c 0%, #05070d 75%);
-  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  border-radius: 22px;
+  border: 1px solid rgba(113, 185, 255, 0.18);
+  background:
+    radial-gradient(ellipse 62% 62% at 50% 50%, rgba(16, 38, 74, 0.48) 0%, rgba(6, 12, 24, 0.85) 58%, #020409 100%);
+  box-shadow: 0 28px 68px rgba(0, 0, 0, 0.85), 0 0 40px rgba(45, 118, 210, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   touch-action: pan-y;
 }
 
@@ -101,8 +104,9 @@ body {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, #05070d, transparent 10%, transparent 90%, #05070d),
-              linear-gradient(0deg, #05070d, transparent 10%, transparent 90%, #05070d);
+  background:
+    linear-gradient(90deg, #020409 0%, transparent 9%, transparent 91%, #020409 100%),
+    linear-gradient(0deg, #020409 0%, transparent 9%, transparent 91%, #020409 100%);
   pointer-events: none;
 }
 
@@ -118,7 +122,7 @@ body {
 }
 
 .animate-rise {
-  animation: rise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: rise 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 /* Interstellar Music Equalizer Bars */

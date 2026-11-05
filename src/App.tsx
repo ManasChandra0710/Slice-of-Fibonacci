@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { FibonacciCanvas } from './components/FibonacciCanvas';
 import {
   searchFibonacciTerm,
@@ -48,13 +48,26 @@ function getInitialSearchNumber(): string {
   const pathNum = extractNumberFromPathname(window.location.pathname);
   if (pathNum) return pathNum;
 
-  // Fallback support for query parameter (?q=13 or ?number=13)
   const params = new URLSearchParams(window.location.search);
   const q = params.get('q') || params.get('number');
   if (q && /^\d{1,8}$/.test(q)) {
     return q;
   }
   return '';
+}
+
+/**
+ * Splits a potentially multi-thousand-digit string into fixed-size chunks
+ * so the browser can lay out and wrap very long Fibonacci terms smoothly.
+ */
+function splitIntoReadableChunks(str: string, chunkSize: number = 400): string[] {
+  if (!str) return [];
+  if (str.length <= chunkSize) return [str];
+  const chunks: string[] = [];
+  for (let i = 0; i < str.length; i += chunkSize) {
+    chunks.push(str.slice(i, i + chunkSize));
+  }
+  return chunks;
 }
 
 export default function App() {
@@ -65,6 +78,7 @@ export default function App() {
   const [searchProgress, setSearchProgress] = useState<number | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [matchResult, setMatchResult] = useState<FibonacciMatchResult | null>(null);
+  const [isWhatsThisOpen, setIsWhatsThisOpen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(soundEngine.getIsPlaying());
   const [shareCopied, setShareCopied] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -75,7 +89,6 @@ export default function App() {
   const inputRef = useRef<HTMLInputElement>(null);
   const swirlSectionRef = useRef<HTMLElement>(null);
   const resultRef = useRef<HTMLElement>(null);
-  const whatsThisSectionRef = useRef<HTMLElement>(null);
 
   // Track active search request ID to prevent stale/duplicate results
   const activeSearchReqRef = useRef(0);
@@ -93,6 +106,18 @@ export default function App() {
     });
     return unsub;
   }, []);
+
+  // Close "What's This?" on Escape key
+  useEffect(() => {
+    if (!isWhatsThisOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsWhatsThisOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isWhatsThisOpen]);
 
   // Smooth scroll to the 3D Glass Orb Swirl once the search result and 3D visualization are ready
   const handleSequenceReady = useCallback(() => {
@@ -159,7 +184,6 @@ export default function App() {
     setSearchProgress(0);
     setPreviewQuery(clean);
 
-    // Update browser URL using History API to /{number} without full page reload
     if (pushToHistory && typeof window !== 'undefined') {
       const targetPath = `/${clean}`;
       if (window.location.pathname !== targetPath) {
@@ -167,7 +191,6 @@ export default function App() {
       }
     }
 
-    // Update document title for searched number
     if (typeof document !== 'undefined') {
       document.title = `${clean} in Fibonacci - Slice of Fibonacci`;
     }
@@ -208,12 +231,10 @@ export default function App() {
       setInputValue(initialNum);
       handleSearch(initialNum, false);
 
-      // Clean up any query parameters like ?number=13 to pure /{number}
       if (window.location.search && window.history.replaceState) {
         window.history.replaceState({ number: initialNum }, '', `/${initialNum}`);
       }
     } else if (window.location.pathname !== '/' && window.location.pathname !== '') {
-      // Handle malformed paths like /abc gracefully by returning to clean homepage
       if (window.history.replaceState) {
         window.history.replaceState({}, '', '/');
       }
@@ -278,7 +299,6 @@ export default function App() {
     setPreviewQuery(nextVal);
   };
 
-  // Generate clean shareable URL for the current searched number
   const getShareUrl = (query: string) => {
     if (typeof window === 'undefined') {
       return `${ORIGINAL_HOMEPAGE_URL}${query}`;
@@ -294,7 +314,6 @@ export default function App() {
       const card = await generateShareCard(matchResult);
       setShareCard(card);
 
-      // Attempt native share with image file on supported mobile/desktop browsers
       if (typeof navigator !== 'undefined' && navigator.share) {
         const shareData: ShareData = {
           title: 'Slice of Fibonacci',
@@ -322,7 +341,6 @@ export default function App() {
         }
       }
 
-      // If native file sharing is not directly handled or user wants to download/preview, open modal
       setIsShareModalOpen(true);
     } catch (err) {
       console.error('Failed to generate share card', err);
@@ -340,25 +358,22 @@ export default function App() {
     soundEngine.togglePlayPause();
   };
 
-  const scrollToWhatsThis = () => {
-    whatsThisSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
+  const beforeChunks = useMemo(
+    () => (matchResult ? splitIntoReadableChunks(matchResult.before, 400) : []),
+    [matchResult]
+  );
+
+  const afterChunks = useMemo(
+    () => (matchResult ? splitIntoReadableChunks(matchResult.after, 400) : []),
+    [matchResult]
+  );
 
   const showResultSection = isSearching || Boolean(matchResult) || Boolean(searchError);
   const isSearchBarActive = isInputFocused || inputValue.length > 0;
   const showClearHelper = Boolean(inputValue) || Boolean(matchResult) || Boolean(searchError);
 
-  // Adaptive typography for displaying the complete Fibonacci term immediately without internal scrolling
-  const termTypographyClass = matchResult
-    ? matchResult.termLength > 3500
-      ? 'text-[10.5px] sm:text-[11px] leading-[1.38] tracking-tight'
-      : matchResult.termLength > 900
-      ? 'text-[11px] sm:text-xs leading-snug tracking-normal'
-      : 'text-xs sm:text-[13px] leading-relaxed tracking-wide'
-    : 'text-xs sm:text-[13px] leading-relaxed tracking-wide';
-
   return (
-    <div className="max-w-[1100px] mx-auto px-4 sm:px-8 pt-6 sm:pt-8 pb-20 text-[#f2f4f8] min-h-screen flex flex-col justify-between">
+    <div className="max-w-[1100px] mx-auto px-4 sm:px-8 pt-6 sm:pt-8 pb-16 text-[#f2f4f8] min-h-screen flex flex-col justify-between">
       {/* Floating Glass Navigation Header */}
       <header className="glass-panel rounded-2xl px-5 py-3.5 flex justify-between items-center text-xs tracking-wide">
         <button
@@ -367,44 +382,12 @@ export default function App() {
           className="flex items-center gap-3 font-semibold text-sm sm:text-base tracking-tight cursor-pointer text-left focus:outline-none group"
           title="Return to Slice of Fibonacci Homepage (/)"
         >
-          <span className="relative flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-[#121c2e] via-[#0b1320] to-[#1c1810] border border-[#71b9ff]/40 shadow-[0_0_18px_rgba(113,185,255,0.28)] group-hover:border-[#f0c978]/60 group-hover:shadow-[0_0_24px_rgba(240,201,120,0.4)] transition-all duration-300 overflow-hidden shrink-0">
-            <span className="absolute inset-0 bg-gradient-to-tr from-[#71b9ff]/20 via-transparent to-[#f0c978]/25 opacity-70 group-hover:opacity-100 transition duration-300 pointer-events-none" />
-            <svg
-              viewBox="0 0 32 32"
-              className="w-5 h-5 relative z-10 filter drop-shadow-[0_0_6px_rgba(113,185,255,0.7)]"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <defs>
-                <linearGradient id="fib-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#71b9ff" />
-                  <stop offset="55%" stopColor="#9ecbff" />
-                  <stop offset="100%" stopColor="#f0c978" />
-                </linearGradient>
-                <filter id="fib-glow" x="-20%" y="-20%" width="140%" height="140%">
-                  <feGaussianBlur stdDeviation="0.8" result="blur" />
-                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                </filter>
-              </defs>
-              {/* Subtle Golden Ratio Subdivision Geometry */}
-              <line x1="18" y1="9" x2="18" y2="23.5" stroke="rgba(113,185,255,0.22)" strokeWidth="0.75" strokeDasharray="1.5 1.5" />
-              <line x1="18" y1="18" x2="27" y2="18" stroke="rgba(240,201,120,0.22)" strokeWidth="0.75" strokeDasharray="1.5 1.5" />
-
-              {/* Fibonacci Logarithmic Golden Spiral */}
-              <path
-                d="M 4 23 A 14 14 0 0 1 18 9 A 9 9 0 0 1 27 18 A 5.5 5.5 0 0 1 21.5 23.5 A 3.5 3.5 0 0 1 18 20 A 2 2 0 0 1 20 18 A 1.2 1.2 0 0 1 21.2 19.2"
-                stroke="url(#fib-grad)"
-                strokeWidth="2.1"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-
-              {/* Radiant Golden Singularity Node & Fibonacci Points */}
-              <circle cx="21" cy="18.8" r="1.7" fill="#f0c978" filter="url(#fib-glow)" />
-              <circle cx="4" cy="23" r="1.3" fill="#71b9ff" />
-              <circle cx="18" cy="9" r="1.3" fill="#9ecbff" />
-              <circle cx="27" cy="18" r="1.3" fill="#f0c978" />
-            </svg>
+          <span className="relative flex items-center justify-center w-9 h-9 rounded-xl bg-[#040812] border border-[#71b9ff]/45 shadow-[0_0_18px_rgba(113,185,255,0.3)] group-hover:border-[#71b9ff]/85 group-hover:shadow-[0_0_24px_rgba(113,185,255,0.5)] transition-all duration-300 overflow-hidden shrink-0">
+            <img
+              src="/logo.png"
+              alt="Slice of Fibonacci Logo"
+              className="w-full h-full object-cover"
+            />
           </span>
           <span className="text-white font-medium tracking-tight text-[15px] sm:text-[16px] group-hover:text-[#9ecbff] transition">
             Slice of Fibonacci
@@ -412,14 +395,14 @@ export default function App() {
         </button>
 
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Interstellar Music Control */}
+          {/* Instant-Response Interstellar Music Control */}
           <div className="flex items-center gap-2 p-1.5 pl-2.5 pr-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 hover:border-[#71b9ff]/40 transition duration-300 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.35)]">
             <button
+              type="button"
               onClick={handleToggleSound}
               className="flex items-center gap-2 text-left cursor-pointer group"
               title={isPlaying ? 'Pause Interstellar Soundtrack' : 'Play Interstellar Soundtrack'}
             >
-              {/* Dynamic Equalizer / Music Icon */}
               <div className="w-4 h-4 flex items-end justify-center gap-[2.5px] shrink-0">
                 {isPlaying ? (
                   <>
@@ -433,7 +416,11 @@ export default function App() {
               </div>
 
               <div className="flex flex-col leading-none pr-1 select-none">
-                <span className={`text-[9px] font-mono tracking-wider uppercase ${isPlaying ? 'text-[#71b9ff]' : 'text-[#8e96a5]'}`}>
+                <span
+                  className={`text-[9px] font-mono tracking-wider uppercase ${
+                    isPlaying ? 'text-[#71b9ff]' : 'text-[#8e96a5]'
+                  }`}
+                >
                   {isPlaying ? 'Now Playing' : 'Paused'}
                 </span>
                 <span className="text-[11px] font-medium text-white/90 group-hover:text-white transition">
@@ -443,11 +430,17 @@ export default function App() {
             </button>
 
             <button
+              type="button"
               onClick={handleToggleSound}
               title={isPlaying ? 'Pause Interstellar Music' : 'Play Interstellar Music'}
+              aria-label={isPlaying ? 'Pause Interstellar Music' : 'Play Interstellar Music'}
               className="p-1 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-[#8e96a5] hover:text-[#71b9ff] transition cursor-pointer"
             >
-              {isPlaying ? <Volume2 className="w-3.5 h-3.5 text-[#71b9ff]" /> : <VolumeX className="w-3.5 h-3.5 text-[#606977]" />}
+              {isPlaying ? (
+                <Volume2 className="w-3.5 h-3.5 text-[#71b9ff]" />
+              ) : (
+                <VolumeX className="w-3.5 h-3.5 text-[#606977]" />
+              )}
             </button>
           </div>
         </div>
@@ -475,14 +468,14 @@ export default function App() {
             Find where yours begins in the Fibonacci sequence.
           </p>
 
-          {/* Constant-Width Search Bar Matching Reference Image (1 to 8 digits, leading zeros preserved) */}
+          {/* Constant-Width Search Bar (1 to 8 digits, leading zeros preserved) */}
           <div ref={searchBarRef} className="w-full max-w-[640px] mx-auto mt-8">
             <form
               onSubmit={handleSubmit}
-              className={`rounded-2xl bg-[#090d16]/95 p-2 sm:p-2.5 flex items-center gap-3 w-full transition-all duration-300 border ${
+              className={`rounded-2xl bg-[#060a14]/95 p-2 sm:p-2.5 flex items-center gap-3 w-full transition-all duration-300 border ${
                 isSearchBarActive
-                  ? 'border-[#68b3ff]/80 shadow-[0_0_32px_rgba(104,179,255,0.22),inset_0_0_14px_rgba(104,179,255,0.07)]'
-                  : 'border-[#1e2d45] shadow-[0_12px_36px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.05)] hover:border-[#2e4568]'
+                  ? 'border-[#68b3ff]/85 shadow-[0_0_32px_rgba(104,179,255,0.22),inset_0_0_14px_rgba(104,179,255,0.07)]'
+                  : 'border-[#1b2a42] shadow-[0_14px_38px_rgba(0,0,0,0.68),inset_0_1px_0_rgba(255,255,255,0.05)] hover:border-[#2c4366]'
               }`}
             >
               <div className="pl-2.5 sm:pl-3.5 flex items-center justify-center shrink-0 pointer-events-none">
@@ -567,8 +560,8 @@ export default function App() {
           >
             {/* Non-Blocking Top Progress Indicator Bar */}
             {isSearching && (
-              <div className="mb-5 rounded-xl bg-[#091326]/90 border border-[#71b9ff]/30 overflow-hidden shadow-[0_0_20px_rgba(113,185,255,0.12)]">
-                <div className="h-1 w-full bg-[#0d1b33] overflow-hidden relative">
+              <div className="mb-5 rounded-xl bg-[#071122]/90 border border-[#71b9ff]/30 overflow-hidden shadow-[0_0_20px_rgba(113,185,255,0.12)]">
+                <div className="h-1 w-full bg-[#0b182e] overflow-hidden relative">
                   <div className="h-full w-full bg-gradient-to-r from-transparent via-[#71b9ff] to-[#f0c978] animate-pulse" />
                 </div>
                 <div className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
@@ -622,7 +615,7 @@ export default function App() {
             {matchResult && (
               <>
                 {/* Sequence Orbs Visual Trail */}
-                <div className="mb-6 p-4 rounded-xl bg-[#090f1a]/80 border border-white/[0.06] flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="mb-6 p-4 rounded-xl bg-[#060b16]/85 border border-white/[0.07] flex flex-col sm:flex-row items-center justify-between gap-4">
                   <div className="text-center sm:text-left">
                     <div className="text-[10px] font-mono uppercase tracking-[0.14em] text-[#7d8fa6] mb-1">
                       YOUR NUMBER
@@ -632,7 +625,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center justify-center gap-2.5 sm:gap-3 p-2.5 rounded-xl bg-black/40 border border-white/[0.08]">
+                  <div className="flex flex-wrap items-center justify-center gap-2.5 sm:gap-3 p-2.5 rounded-xl bg-black/45 border border-white/[0.08]">
                     {matchResult.trailDigits.map((d, idx) => {
                       const rule = DIGIT_RULES[d];
                       return (
@@ -702,9 +695,9 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Complete Mathematical Term Ribbon — Full Term Immediately Visible Without Internal Scrolling */}
-                <div className="p-4 sm:p-5 bg-[#080d17] border border-white/[0.08] rounded-xl mb-4 shadow-inner max-w-full overflow-hidden">
-                  <div className="flex flex-wrap justify-between items-center gap-2 text-[10px] uppercase font-mono tracking-wider text-[#7d8fa6] mb-3 pb-2 border-b border-white/[0.06]">
+                {/* Complete Mathematical Term Ribbon — Readable Typography, Natural Wrapping, Full Term Displayed */}
+                <div className="p-5 sm:p-6 bg-[#050913] border border-[#71b9ff]/18 rounded-xl mb-5 shadow-inner max-w-full overflow-hidden">
+                  <div className="flex flex-wrap justify-between items-center gap-2 text-[11px] uppercase font-mono tracking-wider text-[#7d8fa6] mb-3.5 pb-2.5 border-b border-white/[0.07]">
                     <span className="flex items-center gap-1.5 text-[#9bd3ff] font-semibold">
                       <span className="w-1.5 h-1.5 rounded-full bg-[#71b9ff] shadow-[0_0_8px_#71b9ff]" />
                       Complete Term F({matchResult.n.toLocaleString('en-US')})
@@ -714,25 +707,27 @@ export default function App() {
                     </span>
                   </div>
 
-                  <div
-                    className={`font-mono ${termTypographyClass} break-all text-[#99a9bf] select-text whitespace-normal max-w-full`}
-                  >
-                    <span>{matchResult.before}</span>
-                    <mark className="bg-[#1b3a5c] text-[#9bd3ff] border border-[#71b9ff]/70 rounded-md px-1.5 py-0.5 mx-0.5 font-bold shadow-[0_0_12px_rgba(113,185,255,0.4)]">
+                  <div className="font-mono tabular-nums text-sm sm:text-[15px] leading-[1.88] tracking-[0.055em] break-all text-[#b0c0d6] select-text whitespace-normal max-w-full">
+                    {beforeChunks.map((chunk, i) => (
+                      <span key={`b-${i}`}>{chunk}</span>
+                    ))}
+                    <mark className="bg-[#16355b] text-white border border-[#71b9ff] rounded-md px-2 py-0.5 mx-1 font-bold shadow-[0_0_16px_rgba(113,185,255,0.5)]">
                       {matchResult.match}
                     </mark>
-                    <span>{matchResult.after}</span>
+                    {afterChunks.map((chunk, i) => (
+                      <span key={`a-${i}`}>{chunk}</span>
+                    ))}
                   </div>
                 </div>
 
                 {/* Actions Row */}
                 <div className="flex flex-wrap justify-between items-center gap-3 pt-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2.5">
                     <button
                       type="button"
                       onClick={handleShare}
                       disabled={isGeneratingShare}
-                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#f0c978]/25 via-[#71b9ff]/25 to-[#2c83d6]/25 hover:from-[#f0c978]/35 hover:via-[#71b9ff]/35 hover:to-[#2c83d6]/35 border border-[#f0c978]/50 hover:border-[#f0c978]/80 text-[#f0c978] hover:text-white text-xs font-mono transition cursor-pointer flex items-center gap-1.5 shadow-[0_0_18px_rgba(240,201,120,0.2)] active:scale-95 disabled:opacity-50"
+                      className="px-4 py-2.5 rounded-xl bg-[#71b9ff]/15 hover:bg-[#71b9ff]/25 border border-[#71b9ff]/45 hover:border-[#71b9ff]/80 text-[#71b9ff] hover:text-white text-xs font-mono font-semibold transition cursor-pointer flex items-center gap-2 shadow-[0_0_18px_rgba(113,185,255,0.18)] active:scale-95 disabled:opacity-50"
                     >
                       {isGeneratingShare ? (
                         <>
@@ -741,13 +736,13 @@ export default function App() {
                         </>
                       ) : shareCopied ? (
                         <>
-                          <Check className="w-3.5 h-3.5 text-[#f0c978]" />
-                          <span className="text-[#f0c978]">Link & Card Ready ✓</span>
+                          <Check className="w-3.5 h-3.5 text-[#71b9ff]" />
+                          <span>Link & Card Ready ✓</span>
                         </>
                       ) : (
                         <>
-                          <Share2 className="w-3.5 h-3.5 text-[#f0c978]" />
-                          <span>Share Result & Card ↗</span>
+                          <Share2 className="w-3.5 h-3.5 text-[#71b9ff]" />
+                          <span>Share Result Card ↗</span>
                         </>
                       )}
                     </button>
@@ -755,7 +750,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => handleClear(true)}
-                      className="px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/10 hover:border-white/20 text-[#8e9cb0] hover:text-white text-xs font-mono transition cursor-pointer flex items-center gap-1.5 active:scale-95"
+                      className="px-3.5 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/10 hover:border-white/20 text-[#8e9cb0] hover:text-white text-xs font-mono transition cursor-pointer flex items-center gap-1.5 active:scale-95"
                       title="Clear search and scroll back to input bar"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
@@ -767,189 +762,161 @@ export default function App() {
             )}
           </section>
         )}
-
-        {/* "What's This?" Section — Matching Reference Images + Relocated Orb Color System + LinkedIn */}
-        <section
-          id="whats-this"
-          ref={whatsThisSectionRef}
-          className="max-w-[980px] mx-auto mt-14 sm:mt-20 pt-10 sm:pt-14 border-t border-white/[0.07]"
-        >
-          {/* Top Editorial Grid (Matching Reference Image 3) */}
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.18fr] gap-10 lg:gap-16 items-start">
-            {/* Left Column */}
-            <div>
-              <div className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.28em] text-[#5caeff] mb-5">
-                BEAUTY IN THE PATTERN
-              </div>
-
-              <h2 className="text-[32px] sm:text-[44px] font-semibold tracking-[-0.035em] leading-[1.12] text-white">
-                Simple beginnings.
-                <br />
-                <span className="text-[#4da3ff]">Endless possibility.</span>
-              </h2>
-
-              <p className="text-[#7889a1] text-sm sm:text-[15px] leading-[1.75] mt-6 max-w-[380px]">
-                Start with zero and one. Add the last two numbers. Repeat. A universe of patterns emerges.
-              </p>
-
-              <div className="mt-8 font-serif italic text-2xl sm:text-[30px] text-[#5caeff] tracking-wide select-none">
-                F<sub className="text-sm not-italic font-mono">n</sub> = F
-                <sub className="text-sm not-italic font-mono">n−1</sub> + F
-                <sub className="text-sm not-italic font-mono">n−2</sub>
-              </div>
-            </div>
-
-            {/* Right Column: 01, 02, 03 Breakdown */}
-            <div className="flex flex-col">
-              <div className="pb-7 border-b border-[#142238] flex items-start gap-6 sm:gap-8">
-                <span className="text-xs font-mono text-[#5caeff] pt-1 shrink-0">01</span>
-                <div>
-                  <h3 className="text-base sm:text-[18px] font-medium text-white mb-2">
-                    A number that means something.
-                  </h3>
-                  <p className="text-xs sm:text-[13.5px] text-[#7889a1] leading-relaxed">
-                    A date, a lucky number, or a string of zeros. Enter any 1–8 digits; leading zeros stay exactly as they are.
-                  </p>
-                </div>
-              </div>
-
-              <div className="py-7 border-b border-[#142238] flex items-start gap-6 sm:gap-8">
-                <span className="text-xs font-mono text-[#5caeff] pt-1 shrink-0">02</span>
-                <div>
-                  <h3 className="text-base sm:text-[18px] font-medium text-white mb-2">
-                    Find its very first appearance.
-                  </h3>
-                  <p className="text-xs sm:text-[13.5px] text-[#7889a1] leading-relaxed">
-                    We check each Fibonacci term in order, starting at F₀ = 0. Your digits must appear together inside one term.
-                  </p>
-                </div>
-              </div>
-
-              <div className="pt-7 pb-7 border-b border-[#142238] flex items-start gap-6 sm:gap-8">
-                <span className="text-xs font-mono text-[#5caeff] pt-1 shrink-0">03</span>
-                <div>
-                  <h3 className="text-base sm:text-[18px] font-medium text-white mb-2">
-                    See your place in the sequence.
-                  </h3>
-                  <p className="text-xs sm:text-[13.5px] text-[#7889a1] leading-relaxed">
-                    Discover the term, the position inside it, and its place in the stream formed by joining every term. Digit positions start at 1.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* "What am I looking at?" Detailed Explanation Card (Matching Reference Image 4) */}
-          <div className="mt-12 p-6 sm:p-8 rounded-2xl bg-[#080d18]/90 border border-[#192841] text-[#b4c3d8]">
-            <h3 className="text-lg sm:text-xl font-bold text-white mb-4">
-              What am I looking at?
-            </h3>
-            <div className="space-y-3.5 text-xs sm:text-[14.5px] leading-relaxed text-[#9fb0c7]">
-              <p>
-                The Fibonacci sequence starts{' '}
-                <code className="text-[#71b9ff] font-mono">0, 1, 1, 2, 3, 5, 8, 13…</code>. Each new term is the sum of the previous two.
-              </p>
-              <p>
-                This page checks each term in order and stops at the first term containing your digits consecutively. It then finds the first position of that exact string inside the term. For example, a position of 4 means the match begins at the fourth digit.
-              </p>
-              <p>
-                Term indices start at <code className="text-[#71b9ff] font-mono">F(0) = 0</code>; digit positions start at <code className="text-[#71b9ff] font-mono">1</code>. Leading zeroes in your search are preserved. In the 3D spiral above, each decimal digit is rendered as a refractive glass orb—and when your number is found, its matching orbs illuminate with planetary rings in 3D space.
-              </p>
-            </div>
-          </div>
-
-          {/* Relocated Orb Colour System (Moved from Hero Section into What's This?) */}
-          <div className="mt-8 glass-panel rounded-2xl p-5 sm:p-6 text-center">
-            <div className="flex flex-wrap items-center justify-between gap-2 pb-3.5 mb-4 border-b border-white/[0.06] text-xs">
-              <span className="font-medium text-[#c5d3e8] flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#71b9ff] shadow-[0_0_8px_#71b9ff]" />
-                Orb Colour System
-              </span>
-              <span className="text-[#7d8fa6] font-mono text-[11px]">
-                Uniform Size · Digit Codes 0–9
-              </span>
-            </div>
-
-            {/* 10 Glowing Glass Orbs */}
-            <div className="grid grid-cols-5 sm:grid-cols-10 gap-2 sm:gap-3 py-1">
-              {DIGIT_RULES.map((rule) => (
-                <button
-                  key={rule.digit}
-                  type="button"
-                  onClick={() => {
-                    setInputValue((prev) => {
-                      if (prev.length >= 8) return prev;
-                      const next = (prev + String(rule.digit)).slice(0, 8);
-                      setPreviewQuery(next);
-                      return next;
-                    });
-                    searchBarRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  }}
-                  className="flex flex-col items-center gap-2 p-2.5 rounded-xl bg-white/[0.02] hover:bg-white/[0.08] border border-white/[0.05] hover:border-[#71b9ff]/40 transition group cursor-pointer"
-                  title={`Click to add digit ${rule.digit} (${rule.name})`}
-                >
-                  <span
-                    className="w-6 h-6 sm:w-7 sm:h-7 rounded-full glass-orb transition duration-200 group-hover:scale-110"
-                    style={{
-                      backgroundColor: rule.color,
-                      color: rule.color,
-                    }}
-                  />
-                  <div className="flex flex-col items-center">
-                    <span className="font-mono text-xs font-bold text-white group-hover:text-[#71b9ff]">
-                      {rule.digit}
-                    </span>
-                    <span className="text-[9px] text-[#718299] truncate max-w-[54px] hidden sm:inline">
-                      {rule.name.split(' ')[0]}
-                    </span>
-                  </div>
-                </button>
-              ))}
-            </div>
-
-            <p className="text-[12px] text-[#7d8fa6] mt-3.5 italic font-sans">
-              Every sequence is a continuous trail of these glassy orbs glowing in the 3D swirl.
-            </p>
-          </div>
-
-          {/* Creator & LinkedIn Connection Inside "What's This?" */}
-          <div className="mt-8 flex items-center justify-between flex-wrap gap-4 px-1">
-            <span className="text-xs text-[#6f829a] font-mono">
-              Crafted with curiosity for the infinite Fibonacci sequence.
-            </span>
-
-            <a
-              href="https://www.linkedin.com/in/manaschandra0710"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Connect with Manas Chandra on LinkedIn (opens in a new tab)"
-              title="Manas Chandra on LinkedIn"
-              className="group inline-flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-[#0b1528]/90 hover:bg-[#71b9ff]/15 border border-[#71b9ff]/30 hover:border-[#71b9ff]/70 text-[#9ecbff] hover:text-white shadow-[0_0_16px_rgba(113,185,255,0.16)] hover:shadow-[0_0_24px_rgba(113,185,255,0.4)] transition-all duration-300 hover:-translate-y-0.5"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                className="w-4 h-4 fill-current text-[#71b9ff] group-hover:scale-110 transition-transform duration-200"
-                aria-hidden="true"
-              >
-                <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z" />
-              </svg>
-              <span className="text-xs font-mono tracking-wide">LinkedIn</span>
-            </a>
-          </div>
-        </section>
       </main>
 
-      {/* Footer */}
+      {/* Bottom Footer Control */}
       <footer className="flex justify-between items-center gap-3 mt-12 pt-4 border-t border-white/[0.06] text-[#5d6c80] text-[11px] tracking-wider font-mono uppercase">
         <span>F(n) = F(n−1) + F(n−2)</span>
         <button
           type="button"
-          onClick={scrollToWhatsThis}
+          onClick={() => setIsWhatsThisOpen((prev) => !prev)}
+          aria-expanded={isWhatsThisOpen}
+          aria-controls="whats-this-modal"
           className="border-0 bg-transparent text-[#8298b4] hover:text-[#71b9ff] cursor-pointer font-inherit tracking-inherit uppercase transition"
         >
-          What's this?
+          {isWhatsThisOpen ? 'Close What’s this? ×' : 'What’s this?'}
         </button>
       </footer>
+
+      {/* Expandable Modal / Drawer for "What's This?" (Hidden by Default, Smoothly Revealed on Click) */}
+      {isWhatsThisOpen && (
+        <div
+          id="whats-this-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="whats-this-heading"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-md animate-rise"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsWhatsThisOpen(false);
+          }}
+        >
+          <div className="relative w-full max-w-[960px] max-h-[90vh] overflow-y-auto glass-panel-glow rounded-2xl sm:rounded-3xl p-6 sm:p-10 border border-[#71b9ff]/25 shadow-[0_28px_75px_rgba(0,0,0,0.92)]">
+            {/* Close Button */}
+            <div className="flex items-center justify-between pb-5 mb-7 border-b border-white/[0.08]">
+              <div className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.28em] text-[#5caeff]">
+                BEAUTY IN THE PATTERN
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsWhatsThisOpen(false)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.12] border border-white/10 text-xs font-mono text-[#b8c7dc] hover:text-white transition cursor-pointer"
+                aria-label="Close What's This panel"
+              >
+                <span>Close</span>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Editorial Two-Column Layout */}
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.18fr] gap-10 lg:gap-14 items-start">
+              {/* Left Column */}
+              <div>
+                <h2
+                  id="whats-this-heading"
+                  className="text-[30px] sm:text-[42px] font-semibold tracking-[-0.035em] leading-[1.12] text-white"
+                >
+                  Simple beginnings.
+                  <br />
+                  <span className="text-[#4da3ff]">Endless possibility.</span>
+                </h2>
+
+                <p className="text-[#7889a1] text-sm sm:text-[15px] leading-[1.75] mt-5 max-w-[380px]">
+                  Start with zero and one. Add the last two numbers. Repeat. A universe of patterns emerges.
+                </p>
+
+                <div className="mt-7 font-serif italic text-2xl sm:text-[30px] text-[#5caeff] tracking-wide select-none">
+                  F<sub className="text-sm not-italic font-mono">n</sub> = F
+                  <sub className="text-sm not-italic font-mono">n−1</sub> + F
+                  <sub className="text-sm not-italic font-mono">n−2</sub>
+                </div>
+              </div>
+
+              {/* Right Column: 01, 02, 03 Breakdown */}
+              <div className="flex flex-col">
+                <div className="pb-6 border-b border-[#142238] flex items-start gap-6 sm:gap-8">
+                  <span className="text-xs font-mono text-[#5caeff] pt-1 shrink-0">01</span>
+                  <div>
+                    <h3 className="text-base sm:text-[18px] font-medium text-white mb-2">
+                      A number that means something.
+                    </h3>
+                    <p className="text-xs sm:text-[13.5px] text-[#7889a1] leading-relaxed">
+                      A date, a lucky number, or a string of zeros. Enter any 1–8 digits; leading zeros stay exactly as they are.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="py-6 border-b border-[#142238] flex items-start gap-6 sm:gap-8">
+                  <span className="text-xs font-mono text-[#5caeff] pt-1 shrink-0">02</span>
+                  <div>
+                    <h3 className="text-base sm:text-[18px] font-medium text-white mb-2">
+                      Find its very first appearance.
+                    </h3>
+                    <p className="text-xs sm:text-[13.5px] text-[#7889a1] leading-relaxed">
+                      We check each Fibonacci term in order, starting at F₀ = 0. Your digits must appear together inside one term.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="pt-6 pb-6 border-b border-[#142238] flex items-start gap-6 sm:gap-8">
+                  <span className="text-xs font-mono text-[#5caeff] pt-1 shrink-0">03</span>
+                  <div>
+                    <h3 className="text-base sm:text-[18px] font-medium text-white mb-2">
+                      See your place in the sequence.
+                    </h3>
+                    <p className="text-xs sm:text-[13.5px] text-[#7889a1] leading-relaxed">
+                      Discover the term, the position inside it, and its place in the stream formed by joining every term. Digit positions start at 1.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* "What am I looking at?" Explanation Card */}
+            <div className="mt-10 p-6 sm:p-7 rounded-2xl bg-[#050a14]/90 border border-[#192841] text-[#b4c3d8]">
+              <h3 className="text-lg sm:text-xl font-bold text-white mb-3.5">
+                What am I looking at?
+              </h3>
+              <div className="space-y-3 text-xs sm:text-[14.5px] leading-relaxed text-[#9fb0c7]">
+                <p>
+                  The Fibonacci sequence starts{' '}
+                  <code className="text-[#71b9ff] font-mono">0, 1, 1, 2, 3, 5, 8, 13…</code>. Each new term is the sum of the previous two.
+                </p>
+                <p>
+                  This page checks each term in order and stops at the first term containing your digits consecutively. It then finds the first position of that exact string inside the term. For example, a position of 4 means the match begins at the fourth digit.
+                </p>
+                <p>
+                  Term indices start at <code className="text-[#71b9ff] font-mono">F(0) = 0</code>; digit positions start at <code className="text-[#71b9ff] font-mono">1</code>. Leading zeroes in your search are preserved.
+                </p>
+              </div>
+            </div>
+
+            {/* Creator & LinkedIn Connection Inside "What's This?" */}
+            <div className="mt-8 pt-5 border-t border-white/[0.06] flex items-center justify-between flex-wrap gap-4">
+              <span className="text-xs text-[#6f829a] font-mono">
+                Crafted with curiosity for the infinite Fibonacci sequence.
+              </span>
+
+              <a
+                href="https://www.linkedin.com/in/manaschandra0710"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Connect with Manas Chandra on LinkedIn (opens in a new tab)"
+                title="Manas Chandra on LinkedIn"
+                className="group inline-flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-[#0b1528]/90 hover:bg-[#71b9ff]/15 border border-[#71b9ff]/30 hover:border-[#71b9ff]/70 text-[#9ecbff] hover:text-white shadow-[0_0_16px_rgba(113,185,255,0.16)] hover:shadow-[0_0_24px_rgba(113,185,255,0.4)] transition-all duration-300 hover:-translate-y-0.5"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  className="w-4 h-4 fill-current text-[#71b9ff] group-hover:scale-110 transition-transform duration-200"
+                  aria-hidden="true"
+                >
+                  <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z" />
+                </svg>
+                <span className="text-xs font-mono tracking-wide">LinkedIn</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Share Modal Dialog */}
       {matchResult && (
